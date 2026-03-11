@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "swarm-coordination-simulator"
+version = "0.1.0"
+description = "Autonomous swarm coordination simulator with a web visualizer and Prometheus metrics."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Edgar Hipp" }
+]
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "msgpack>=1.1,<2.0",
+  "numba>=0.64,<1.0",
+  "numpy>=2.4,<3.0",
+  "prometheus-client>=0.22,<1.0",
+  "scipy>=1.17,<2.0",
+  "uvicorn[standard]>=0.34,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "snakeviz>=2.2,<3.0",
+]
+gpu = [
+  "taichi>=1.7,<2.0",
+]
+
+[project.scripts]
+swarm-sim = "swarm_sim.server:main"
+swarm-experiments = "swarm_sim.experiments:main"
+swarm-profile = "swarm_sim.profile:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/swarm_sim"]

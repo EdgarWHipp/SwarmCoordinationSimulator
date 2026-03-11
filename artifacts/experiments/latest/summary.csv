@@ -1,0 +1,13 @@
+scenario_name,seed,steps,frame_stride,assignment_strategy,failure_tick,communication_radius,final_waypoint_completions,final_collision_events_total,final_completion_rate_per_min,mean_cohesion_score,mean_consensus_success_ratio,mean_active_collision_pairs,mean_assignment_changes,time_to_first_completion_seconds,dropout_recovery_ticks,dropout_detected,final_active_agents
+consensus-baseline,7,360,4,consensus,,260.0,5,2,10.42,0.4364,0.9611,0.0361,0.1944,7.6,,False,8
+consensus-baseline,13,360,4,consensus,,260.0,2,4,4.17,0.4542,0.9624,0.45,0.1444,0.08,,False,8
+consensus-baseline,21,360,4,consensus,,260.0,1,2,2.08,0.4952,0.9624,0.0639,0.1278,17.04,,False,8
+consensus-dropout,7,360,4,consensus,240,260.0,5,1,10.42,0.4409,0.9654,0.0389,0.2111,7.6,0,True,7
+consensus-dropout,13,360,4,consensus,240,260.0,2,4,4.17,0.4986,0.9657,0.45,0.1444,0.08,0,True,7
+consensus-dropout,21,360,4,consensus,240,260.0,2,3,4.17,0.5067,0.9657,0.1,0.1444,17.04,0,True,7
+greedy-dropout,7,360,4,greedy,240,260.0,0,6,0.0,0.4473,1.0,0.4111,1.1278,,0,True,7
+greedy-dropout,13,360,4,greedy,240,260.0,1,9,2.08,0.8504,1.0,0.2389,1.7944,0.08,0,True,7
+greedy-dropout,21,360,4,greedy,240,260.0,3,6,6.25,0.4441,1.0,0.1361,1.9278,5.92,0,True,7
+low-comms-consensus,7,360,4,consensus,240,140.0,5,1,10.42,0.4409,0.9396,0.0389,0.2111,7.6,0,True,7
+low-comms-consensus,13,360,4,consensus,240,140.0,2,4,4.17,0.4986,0.9572,0.45,0.1444,0.08,0,True,7
+low-comms-consensus,21,360,4,consensus,240,140.0,2,3,4.17,0.5067,0.94,0.1,0.1444,17.04,0,True,7

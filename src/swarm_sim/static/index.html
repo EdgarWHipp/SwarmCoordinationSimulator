@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Swarm Coordination Simulator</title>
+    <style>
+      :root {
+        --bg-top: #091321;
+        --bg-bottom: #030710;
+        --panel: rgba(8, 18, 34, 0.82);
+        --panel-border: rgba(120, 173, 196, 0.2);
+        --grid: rgba(102, 154, 177, 0.08);
+        --accent: #4fc3c8;
+        --accent-strong: #f6b45e;
+        --text-main: #e6eef4;
+        --text-muted: #9fb6c7;
+        --danger: #f16b7b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "IBM Plex Sans", "Avenir Next", sans-serif;
+        color: var(--text-main);
+        background:
+          radial-gradient(circle at top left, rgba(79, 195, 200, 0.18), transparent 35%),
+          radial-gradient(circle at top right, rgba(246, 180, 94, 0.16), transparent 30%),
+          linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+      }
+
+      .app-shell {
+        width: min(1380px, calc(100vw - 32px));
+        margin: 24px auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr);
+        gap: 18px;
+      }
+
+      .viewport,
+      .panel {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 22px;
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+      }
+
+      .viewport::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(var(--grid) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+        background-size: 48px 48px;
+        pointer-events: none;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .panel {
+        padding: 20px;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", serif;
+        letter-spacing: 0.02em;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+      }
+
+      h2 {
+        font-size: 0.92rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+      }
+
+      p {
+        margin: 0;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+
+      .header {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 18px 0 22px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 16px;
+        font: inherit;
+        font-weight: 600;
+        color: #081420;
+        background: linear-gradient(135deg, var(--accent), #8ae0d8);
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease;
+        box-shadow: 0 10px 24px rgba(79, 195, 200, 0.18);
+      }
+
+      button.secondary {
+        background: linear-gradient(135deg, var(--accent-strong), #f6d28f);
+        box-shadow: 0 10px 24px rgba(246, 180, 94, 0.18);
+      }
+
+      button.ghost {
+        color: var(--text-main);
+        background: rgba(159, 182, 199, 0.12);
+        box-shadow: none;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .stat {
+        padding: 14px 16px;
+        border: 1px solid rgba(159, 182, 199, 0.12);
+        border-radius: 16px;
+        background: rgba(6, 12, 24, 0.62);
+      }
+
+      .label {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        margin-bottom: 6px;
+      }
+
+      .value {
+        font-size: 1.36rem;
+        font-weight: 700;
+      }
+
+      .event-log {
+        margin-top: 22px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .event {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(6, 12, 24, 0.56);
+        border: 1px solid rgba(159, 182, 199, 0.12);
+        color: var(--text-muted);
+      }
+
+      .status {
+        margin-top: 14px;
+        color: var(--text-muted);
+      }
+
+      .status strong {
+        color: var(--text-main);
+      }
+
+      @media (max-width: 980px) {
+        .app-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .panel {
+          order: -1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="viewport">
+        <canvas id="swarm-canvas" width="1280" height="720"></canvas>
+      </section>
+      <aside class="panel">
+        <div class="header">
+          <h2>Autonomous Swarm Coordination</h2>
+          <h1>Consensus-Driven Drone Simulator</h1>
+          <p>
+            Boids-style motion, waypoint negotiation, failure injection, and Prometheus-friendly
+            swarm health metrics in one loop.
+          </p>
+        </div>
+
+        <div class="controls">
+          <button id="pause-button">Pause</button>
+          <button id="resume-button" class="ghost">Resume</button>
+          <button id="reset-button" class="secondary">Reset</button>
+          <button id="failure-button" class="ghost">Inject Failure</button>
+        </div>
+
+        <div class="stats" id="stats-grid"></div>
+
+        <div class="status">
+          WebSocket: <strong id="socket-status">connecting</strong><br />
+          Metrics: <strong><a href="/metrics" target="_blank" style="color: var(--accent);">/metrics</a></strong>
+        </div>
+
+        <div class="event-log" id="event-log"></div>
+      </aside>
+    </main>
+
+    <script>
+      const canvas = document.getElementById("swarm-canvas");
+      const ctx = canvas.getContext("2d");
+      const statsGrid = document.getElementById("stats-grid");
+      const eventLog = document.getElementById("event-log");
+      const socketStatus = document.getElementById("socket-status");
+
+      let currentState = null;
+      let socket = null;
+
+      const statsOrder = [
+        ["active_agents", "Active Drones"],
+        ["failed_agents", "Failed Drones"],
+        ["cohesion_score", "Cohesion"],
+        ["consensus_success_ratio", "Consensus"],
+        ["active_collision_pairs", "Active Collisions"],
+        ["waypoint_completions", "Waypoint Completions"],
+        ["waypoint_completion_rate_per_min", "Completions / Min"],
+        ["assignment_changes", "Assignment Changes"],
+      ];
+
+      function drawGridOverlay() {
+        ctx.save();
+        ctx.strokeStyle = "rgba(102, 154, 177, 0.08)";
+        ctx.lineWidth = 1;
+        for (let x = 0; x < canvas.width; x += 48) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+        for (let y = 0; y < canvas.height; y += 48) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawWaypoint(waypoint) {
+        const { x, y } = waypoint.position;
+        ctx.save();
+        ctx.strokeStyle = waypoint.claimed_by ? "#f6b45e" : "rgba(246, 180, 94, 0.5)";
+        ctx.fillStyle = "rgba(246, 180, 94, 0.12)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 24, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(246, 180, 94, 0.18)";
+        ctx.stroke();
+        ctx.fillStyle = "#f6d28f";
+        ctx.font = "12px IBM Plex Sans, sans-serif";
+        ctx.fillText(waypoint.waypoint_id, x + 18, y - 16);
+        ctx.restore();
+      }
+
+      function drawDrone(drone) {
+        const { x, y } = drone.position;
+        const angle = Math.atan2(drone.velocity.y, drone.velocity.x);
+        const bodyColor = drone.failed ? "#f16b7b" : "#4fc3c8";
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle || 0);
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.moveTo(12, 0);
+        ctx.lineTo(-10, 7);
+        ctx.lineTo(-7, 0);
+        ctx.lineTo(-10, -7);
+        ctx.closePath();
+        ctx.fill();
+
+        if (drone.failed) {
+          ctx.strokeStyle = "rgba(241, 107, 123, 0.9)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-8, -8);
+          ctx.lineTo(8, 8);
+          ctx.moveTo(-8, 8);
+          ctx.lineTo(8, -8);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = "rgba(230, 238, 244, 0.85)";
+        ctx.font = "11px IBM Plex Sans, sans-serif";
+        ctx.fillText(drone.drone_id, x + 14, y + 4);
+        if (drone.target_waypoint_id) {
+          ctx.fillStyle = "rgba(79, 195, 200, 0.85)";
+          ctx.fillText(`-> ${drone.target_waypoint_id}`, x + 14, y + 18);
+        }
+        ctx.restore();
+      }
+
+      function drawAssignments(state) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(79, 195, 200, 0.16)";
+        ctx.setLineDash([6, 8]);
+        for (const drone of state.drones) {
+          if (!drone.target_waypoint_id || drone.failed) {
+            continue;
+          }
+          const waypoint = state.waypoints.find((item) => item.waypoint_id === drone.target_waypoint_id);
+          if (!waypoint) {
+            continue;
+          }
+          ctx.beginPath();
+          ctx.moveTo(drone.position.x, drone.position.y);
+          ctx.lineTo(waypoint.position.x, waypoint.position.y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawState(state) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGridOverlay();
+
+        const gradient = ctx.createRadialGradient(
+          canvas.width * 0.5,
+          canvas.height * 0.5,
+          10,
+          canvas.width * 0.5,
+          canvas.height * 0.5,
+          canvas.width * 0.65
+        );
+        gradient.addColorStop(0, "rgba(79, 195, 200, 0.05)");
+        gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawAssignments(state);
+        state.waypoints.forEach(drawWaypoint);
+        state.drones.forEach(drawDrone);
+      }
+
+      function renderStats(summary) {
+        statsGrid.innerHTML = "";
+        statsOrder.forEach(([key, label]) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "stat";
+          wrapper.innerHTML = `
+            <div class="label">${label}</div>
+            <div class="value">${summary[key]}</div>
+          `;
+          statsGrid.appendChild(wrapper);
+        });
+      }
+
+      function renderEvents(events) {
+        eventLog.innerHTML = "";
+        events.slice().reverse().forEach((event) => {
+          const item = document.createElement("div");
+          item.className = "event";
+          item.textContent = event;
+          eventLog.appendChild(item);
+        });
+      }
+
+      function renderState(state) {
+        currentState = state;
+        drawState(state);
+        renderStats(state.summary);
+        renderEvents(state.events);
+      }
+
+      async function postAction(path) {
+        await fetch(path, { method: "POST" });
+      }
+
+      async function loadInitialState() {
+        const response = await fetch("/api/state");
+        const state = await response.json();
+        canvas.width = state.config.width;
+        canvas.height = state.config.height;
+        renderState(state);
+      }
+
+      function connectSocket() {
+        socket = new WebSocket(`${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`);
+        socketStatus.textContent = "connecting";
+
+        socket.onopen = () => {
+          socketStatus.textContent = "live";
+          socket.send("subscribe");
+        };
+
+        socket.onmessage = (event) => {
+          renderState(JSON.parse(event.data));
+        };
+
+        socket.onclose = () => {
+          socketStatus.textContent = "reconnecting";
+          setTimeout(connectSocket, 1000);
+        };
+      }
+
+      document.getElementById("pause-button").addEventListener("click", () => postAction("/api/pause"));
+      document.getElementById("resume-button").addEventListener("click", () => postAction("/api/resume"));
+      document.getElementById("reset-button").addEventListener("click", () => postAction("/api/reset"));
+      document.getElementById("failure-button").addEventListener("click", () => postAction("/api/fail-random"));
+
+      loadInitialState().then(connectSocket);
+    </script>
+  </body>
+</html>
+

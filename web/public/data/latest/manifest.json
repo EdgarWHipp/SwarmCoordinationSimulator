@@ -1,0 +1,460 @@
+{
+  "generated_at_utc": "2026-03-11T19:55:31.918883+00:00",
+  "version": 1,
+  "default_scenario": "consensus-baseline",
+  "scenarios": [
+    {
+      "name": "consensus-baseline",
+      "description": "Consensus waypoint assignment with nominal comms and no failures.",
+      "steps": 360,
+      "seeds": [
+        7,
+        13,
+        21
+      ],
+      "frame_stride": 4,
+      "config_overrides": {
+        "assignment_strategy": "consensus",
+        "failure_tick": null
+      },
+      "representative_seed": 13,
+      "playback_path": "playbacks/consensus-baseline.json",
+      "aggregate_metrics": {
+        "final_waypoint_completions": {
+          "mean": 2.6667,
+          "stdev": 1.6997
+        },
+        "final_collision_events_total": {
+          "mean": 2.6667,
+          "stdev": 0.9428
+        },
+        "final_completion_rate_per_min": {
+          "mean": 5.5567,
+          "stdev": 3.5432
+        },
+        "mean_cohesion_score": {
+          "mean": 0.4619,
+          "stdev": 0.0246
+        },
+        "mean_consensus_success_ratio": {
+          "mean": 0.962,
+          "stdev": 0.0006
+        },
+        "mean_active_collision_pairs": {
+          "mean": 0.1833,
+          "stdev": 0.1889
+        },
+        "time_to_first_completion_seconds": {
+          "mean": 8.24,
+          "stdev": 6.9387
+        },
+        "dropout_recovery_ticks": {
+          "mean": null,
+          "stdev": null
+        }
+      },
+      "runs": [
+        {
+          "scenario_name": "consensus-baseline",
+          "seed": 7,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": null,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 5,
+          "final_collision_events_total": 2,
+          "final_completion_rate_per_min": 10.42,
+          "mean_cohesion_score": 0.4364,
+          "mean_consensus_success_ratio": 0.9611,
+          "mean_active_collision_pairs": 0.0361,
+          "mean_assignment_changes": 0.1944,
+          "time_to_first_completion_seconds": 7.6,
+          "dropout_recovery_ticks": null,
+          "dropout_detected": false,
+          "final_active_agents": 8
+        },
+        {
+          "scenario_name": "consensus-baseline",
+          "seed": 13,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": null,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 2,
+          "final_collision_events_total": 4,
+          "final_completion_rate_per_min": 4.17,
+          "mean_cohesion_score": 0.4542,
+          "mean_consensus_success_ratio": 0.9624,
+          "mean_active_collision_pairs": 0.45,
+          "mean_assignment_changes": 0.1444,
+          "time_to_first_completion_seconds": 0.08,
+          "dropout_recovery_ticks": null,
+          "dropout_detected": false,
+          "final_active_agents": 8
+        },
+        {
+          "scenario_name": "consensus-baseline",
+          "seed": 21,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": null,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 1,
+          "final_collision_events_total": 2,
+          "final_completion_rate_per_min": 2.08,
+          "mean_cohesion_score": 0.4952,
+          "mean_consensus_success_ratio": 0.9624,
+          "mean_active_collision_pairs": 0.0639,
+          "mean_assignment_changes": 0.1278,
+          "time_to_first_completion_seconds": 17.04,
+          "dropout_recovery_ticks": null,
+          "dropout_detected": false,
+          "final_active_agents": 8
+        }
+      ]
+    },
+    {
+      "name": "consensus-dropout",
+      "description": "Consensus assignment under single-agent dropout.",
+      "steps": 360,
+      "seeds": [
+        7,
+        13,
+        21
+      ],
+      "frame_stride": 4,
+      "config_overrides": {
+        "assignment_strategy": "consensus",
+        "failure_tick": 240
+      },
+      "representative_seed": 21,
+      "playback_path": "playbacks/consensus-dropout.json",
+      "aggregate_metrics": {
+        "final_waypoint_completions": {
+          "mean": 3.0,
+          "stdev": 1.4142
+        },
+        "final_collision_events_total": {
+          "mean": 2.6667,
+          "stdev": 1.2472
+        },
+        "final_completion_rate_per_min": {
+          "mean": 6.2533,
+          "stdev": 2.9463
+        },
+        "mean_cohesion_score": {
+          "mean": 0.4821,
+          "stdev": 0.0293
+        },
+        "mean_consensus_success_ratio": {
+          "mean": 0.9656,
+          "stdev": 0.0001
+        },
+        "mean_active_collision_pairs": {
+          "mean": 0.1963,
+          "stdev": 0.1811
+        },
+        "time_to_first_completion_seconds": {
+          "mean": 8.24,
+          "stdev": 6.9387
+        },
+        "dropout_recovery_ticks": {
+          "mean": 0.0,
+          "stdev": 0.0
+        }
+      },
+      "runs": [
+        {
+          "scenario_name": "consensus-dropout",
+          "seed": 7,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": 240,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 5,
+          "final_collision_events_total": 1,
+          "final_completion_rate_per_min": 10.42,
+          "mean_cohesion_score": 0.4409,
+          "mean_consensus_success_ratio": 0.9654,
+          "mean_active_collision_pairs": 0.0389,
+          "mean_assignment_changes": 0.2111,
+          "time_to_first_completion_seconds": 7.6,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        },
+        {
+          "scenario_name": "consensus-dropout",
+          "seed": 13,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": 240,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 2,
+          "final_collision_events_total": 4,
+          "final_completion_rate_per_min": 4.17,
+          "mean_cohesion_score": 0.4986,
+          "mean_consensus_success_ratio": 0.9657,
+          "mean_active_collision_pairs": 0.45,
+          "mean_assignment_changes": 0.1444,
+          "time_to_first_completion_seconds": 0.08,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        },
+        {
+          "scenario_name": "consensus-dropout",
+          "seed": 21,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": 240,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 2,
+          "final_collision_events_total": 3,
+          "final_completion_rate_per_min": 4.17,
+          "mean_cohesion_score": 0.5067,
+          "mean_consensus_success_ratio": 0.9657,
+          "mean_active_collision_pairs": 0.1,
+          "mean_assignment_changes": 0.1444,
+          "time_to_first_completion_seconds": 17.04,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        }
+      ]
+    },
+    {
+      "name": "greedy-dropout",
+      "description": "Nearest-waypoint greedy assignment under dropout for comparison.",
+      "steps": 360,
+      "seeds": [
+        7,
+        13,
+        21
+      ],
+      "frame_stride": 4,
+      "config_overrides": {
+        "assignment_strategy": "greedy",
+        "failure_tick": 240
+      },
+      "representative_seed": 7,
+      "playback_path": "playbacks/greedy-dropout.json",
+      "aggregate_metrics": {
+        "final_waypoint_completions": {
+          "mean": 1.3333,
+          "stdev": 1.2472
+        },
+        "final_collision_events_total": {
+          "mean": 7.0,
+          "stdev": 1.4142
+        },
+        "final_completion_rate_per_min": {
+          "mean": 2.7767,
+          "stdev": 2.5987
+        },
+        "mean_cohesion_score": {
+          "mean": 0.5806,
+          "stdev": 0.1908
+        },
+        "mean_consensus_success_ratio": {
+          "mean": 1.0,
+          "stdev": 0.0
+        },
+        "mean_active_collision_pairs": {
+          "mean": 0.262,
+          "stdev": 0.1135
+        },
+        "time_to_first_completion_seconds": {
+          "mean": 3.0,
+          "stdev": 2.92
+        },
+        "dropout_recovery_ticks": {
+          "mean": 0.0,
+          "stdev": 0.0
+        }
+      },
+      "runs": [
+        {
+          "scenario_name": "greedy-dropout",
+          "seed": 7,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "greedy",
+          "failure_tick": 240,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 0,
+          "final_collision_events_total": 6,
+          "final_completion_rate_per_min": 0.0,
+          "mean_cohesion_score": 0.4473,
+          "mean_consensus_success_ratio": 1.0,
+          "mean_active_collision_pairs": 0.4111,
+          "mean_assignment_changes": 1.1278,
+          "time_to_first_completion_seconds": null,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        },
+        {
+          "scenario_name": "greedy-dropout",
+          "seed": 13,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "greedy",
+          "failure_tick": 240,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 1,
+          "final_collision_events_total": 9,
+          "final_completion_rate_per_min": 2.08,
+          "mean_cohesion_score": 0.8504,
+          "mean_consensus_success_ratio": 1.0,
+          "mean_active_collision_pairs": 0.2389,
+          "mean_assignment_changes": 1.7944,
+          "time_to_first_completion_seconds": 0.08,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        },
+        {
+          "scenario_name": "greedy-dropout",
+          "seed": 21,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "greedy",
+          "failure_tick": 240,
+          "communication_radius": 260.0,
+          "final_waypoint_completions": 3,
+          "final_collision_events_total": 6,
+          "final_completion_rate_per_min": 6.25,
+          "mean_cohesion_score": 0.4441,
+          "mean_consensus_success_ratio": 1.0,
+          "mean_active_collision_pairs": 0.1361,
+          "mean_assignment_changes": 1.9278,
+          "time_to_first_completion_seconds": 5.92,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        }
+      ]
+    },
+    {
+      "name": "low-comms-consensus",
+      "description": "Consensus assignment with reduced communication radius and dropout.",
+      "steps": 360,
+      "seeds": [
+        7,
+        13,
+        21
+      ],
+      "frame_stride": 4,
+      "config_overrides": {
+        "assignment_strategy": "consensus",
+        "failure_tick": 240,
+        "communication_radius": 140.0
+      },
+      "representative_seed": 21,
+      "playback_path": "playbacks/low-comms-consensus.json",
+      "aggregate_metrics": {
+        "final_waypoint_completions": {
+          "mean": 3.0,
+          "stdev": 1.4142
+        },
+        "final_collision_events_total": {
+          "mean": 2.6667,
+          "stdev": 1.2472
+        },
+        "final_completion_rate_per_min": {
+          "mean": 6.2533,
+          "stdev": 2.9463
+        },
+        "mean_cohesion_score": {
+          "mean": 0.4821,
+          "stdev": 0.0293
+        },
+        "mean_consensus_success_ratio": {
+          "mean": 0.9456,
+          "stdev": 0.0082
+        },
+        "mean_active_collision_pairs": {
+          "mean": 0.1963,
+          "stdev": 0.1811
+        },
+        "time_to_first_completion_seconds": {
+          "mean": 8.24,
+          "stdev": 6.9387
+        },
+        "dropout_recovery_ticks": {
+          "mean": 0.0,
+          "stdev": 0.0
+        }
+      },
+      "runs": [
+        {
+          "scenario_name": "low-comms-consensus",
+          "seed": 7,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": 240,
+          "communication_radius": 140.0,
+          "final_waypoint_completions": 5,
+          "final_collision_events_total": 1,
+          "final_completion_rate_per_min": 10.42,
+          "mean_cohesion_score": 0.4409,
+          "mean_consensus_success_ratio": 0.9396,
+          "mean_active_collision_pairs": 0.0389,
+          "mean_assignment_changes": 0.2111,
+          "time_to_first_completion_seconds": 7.6,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        },
+        {
+          "scenario_name": "low-comms-consensus",
+          "seed": 13,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": 240,
+          "communication_radius": 140.0,
+          "final_waypoint_completions": 2,
+          "final_collision_events_total": 4,
+          "final_completion_rate_per_min": 4.17,
+          "mean_cohesion_score": 0.4986,
+          "mean_consensus_success_ratio": 0.9572,
+          "mean_active_collision_pairs": 0.45,
+          "mean_assignment_changes": 0.1444,
+          "time_to_first_completion_seconds": 0.08,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        },
+        {
+          "scenario_name": "low-comms-consensus",
+          "seed": 21,
+          "steps": 360,
+          "frame_stride": 4,
+          "assignment_strategy": "consensus",
+          "failure_tick": 240,
+          "communication_radius": 140.0,
+          "final_waypoint_completions": 2,
+          "final_collision_events_total": 3,
+          "final_completion_rate_per_min": 4.17,
+          "mean_cohesion_score": 0.5067,
+          "mean_consensus_success_ratio": 0.94,
+          "mean_active_collision_pairs": 0.1,
+          "mean_assignment_changes": 0.1444,
+          "time_to_first_completion_seconds": 17.04,
+          "dropout_recovery_ticks": 0,
+          "dropout_detected": true,
+          "final_active_agents": 7
+        }
+      ]
+    }
+  ]
+}
