@@ -13,6 +13,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--agents", type=int, default=256, help="Number of drones and waypoints.")
     parser.add_argument("--steps", type=int, default=240, help="Number of profiled simulation steps.")
     parser.add_argument("--warmup", type=int, default=8, help="Warm-up steps before profiling.")
+    parser.add_argument(
+        "--backend",
+        choices=("numpy", "taichi"),
+        default="numpy",
+        help="Physics backend to benchmark.",
+    )
     parser.add_argument("--top", type=int, default=20, help="How many profiler rows to print.")
     parser.add_argument(
         "--output",
@@ -30,6 +36,7 @@ def main() -> None:
             drone_count=args.agents,
             waypoint_count=args.agents,
             planning_interval=4,
+            physics_backend=args.backend,
             failure_tick=None,
         )
     )
@@ -52,3 +59,7 @@ def main() -> None:
     if args.output is not None:
         print(f"\nProfile written to {args.output}")
         print(f"Open with: snakeviz {args.output}")
+
+
+if __name__ == "__main__":
+    main()

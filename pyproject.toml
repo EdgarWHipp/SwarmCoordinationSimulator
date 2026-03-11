@@ -32,6 +32,7 @@ gpu = [
 
 [project.scripts]
 swarm-sim = "swarm_sim.server:main"
+swarm-cli = "swarm_sim.cli:main"
 swarm-experiments = "swarm_sim.experiments:main"
 swarm-profile = "swarm_sim.profile:main"
 

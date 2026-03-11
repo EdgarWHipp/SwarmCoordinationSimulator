@@ -77,7 +77,7 @@ class TaichiBoidsBackend:
         cohesion_weight: ti.f32,
         waypoint_weight: ti.f32,
         boundary_weight: ti.f32,
-    ) -> None:
+    ):
         margin = ti.f32(90.0)
         for agent_index in range(self.agent_count):
             if self.active_mask[agent_index] == 0:

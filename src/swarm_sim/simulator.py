@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numba import njit
 from scipy.spatial import cKDTree
 
 from swarm_sim.navigation import NavigationGraph
-from swarm_sim.taichi_backend import TaichiBoidsBackend, taichi_available
+
+if TYPE_CHECKING:
+    from swarm_sim.taichi_backend import TaichiBoidsBackend
 
 try:
     from prometheus_client import CollectorRegistry, Counter, Gauge
@@ -435,11 +437,11 @@ class SwarmSimulator:
             cols=self.config.navigation_cols,
             rows=self.config.navigation_rows,
         )
-        self.taichi_backend = (
-            TaichiBoidsBackend(self.config.drone_count)
-            if self.config.physics_backend == "taichi"
-            else None
-        )
+        self.taichi_backend: TaichiBoidsBackend | None = None
+        if self.config.physics_backend == "taichi":
+            from swarm_sim.taichi_backend import TaichiBoidsBackend
+
+            self.taichi_backend = TaichiBoidsBackend(self.config.drone_count)
         self.tick = 0
         self.elapsed_seconds = 0.0
         self.consensus_rounds = 0

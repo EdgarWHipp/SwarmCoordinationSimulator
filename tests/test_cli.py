@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from swarm_sim.cli import render_ascii, summarize_metrics
+from swarm_sim.simulator import SwarmConfig, SwarmSimulator
+
+
+class SwarmCliTest(unittest.TestCase):
+    def test_render_ascii_includes_header_and_legend(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(drone_count=3, waypoint_count=3, failure_tick=None),
+            seed=5,
+        )
+        snapshot = simulator.snapshot()
+
+        output = render_ascii(snapshot, cols=20, rows=8)
+
+        self.assertIn("tick=0", output)
+        self.assertIn("legend:", output)
+        self.assertIn("+--------------------+", output)
+
+    def test_summarize_metrics_returns_expected_shape(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(drone_count=4, waypoint_count=4, planning_interval=1, failure_tick=None),
+            seed=7,
+        )
+        snapshots = [simulator.step() for _ in range(4)]
+
+        metrics = summarize_metrics(
+            summaries=[snapshot["summary"] for snapshot in snapshots],
+            final_snapshot=snapshots[-1],
+            wall_seconds=0.5,
+        )
+
+        self.assertIn("final", metrics)
+        self.assertIn("mean_cohesion_score", metrics)
+        self.assertEqual(metrics["tick"], snapshots[-1]["tick"])
+
+    def test_cli_json_output(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "swarm_sim.cli",
+                "--steps",
+                "6",
+                "--agents",
+                "4",
+                "--waypoints",
+                "4",
+                "--failure-tick",
+                "-1",
+                "--json",
+            ],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                **{"PYTHONPATH": str(SRC)},
+            },
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["tick"], 6)
+        self.assertIn("final", payload)
+        self.assertIn("waypoint_completions", payload["final"])
+
+
+if __name__ == "__main__":
+    unittest.main()

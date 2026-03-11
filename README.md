@@ -7,6 +7,7 @@ A lightweight autonomous swarm coordination simulator built in Python with:
 - failure injection and rebalancing
 - WebSocket-driven browser visualization
 - Prometheus metrics for swarm health observability
+- an optimized simulation core built around SoA `float32` arrays, `cKDTree`, NumPy, and Numba
 
 This repo is intentionally a 2D first slice. The point is to get a credible distributed-systems prototype working before spending time on a heavier 3D stack.
 
@@ -38,6 +39,21 @@ The current consensus model is deliberately lightweight:
 
 That gives you a clean bridge between classic boids behavior and a more distributed coordination story without implementing full replicated-log consensus where it is not needed.
 
+## Performance Architecture
+
+The simulator now follows the optimization order that matters for swarm workloads:
+
+- agent state is stored as Structure of Arrays in `float32`
+- neighbor and collision discovery use `scipy.spatial.cKDTree`
+- waypoint routing uses a startup-time navigation graph with precomputed A* next hops and path costs
+- planning and steering are vectorized with NumPy
+- hot inner loops use Numba
+- only routing state that changed is recomputed
+- live rendering is decoupled from the fixed-timestep simulation loop through a separate worker process
+- runtime transport between the worker and API process uses `msgpack`, while the browser still receives JSON
+
+The default backend is the optimized CPU path. Taichi is available as an experimental opt-in backend for larger swarm counts and future GPU scaling.
+
 ## Quick Start
 
 ### Python simulator
@@ -62,6 +78,53 @@ Run the simulator tests with:
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+### Terminal CLI
+
+For a CPU-first server workflow over SSH, use the terminal runner:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.cli --steps 240 --agents 24 --waypoints 24
+```
+
+Render the 2D simulation as ASCII in the terminal:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.cli --live --steps 240 --agents 24 --render-every 4
+```
+
+Print machine-readable metrics for automation or shell scripts:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.cli --steps 240 --agents 24 --json
+```
+
+If you install the package, the same tool is available as:
+
+```bash
+swarm-cli --steps 240 --agents 24 --json
+```
+
+Profile the hot path with:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.profile --agents 256 --steps 240 --warmup 8 --top 20
+```
+
+Write a profiler artifact for Snakeviz with:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.profile --output /tmp/swarm.prof
+snakeviz /tmp/swarm.prof
+```
+
+Try the experimental Taichi backend with:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.profile --backend taichi --agents 512 --steps 120
+```
+
+If you have a GPU-enabled Taichi environment, set `SWARM_TAICHI_ARCH=gpu` before running.
 
 ### Experiment runner
 
@@ -184,6 +247,10 @@ This is simpler and more reliable than trying to host a long-running Python simu
 ## Why This Stack
 
 I chose a custom simulator first instead of Mesa for the initial implementation because this repo needs explicit control over timing, communication range, consensus epochs, and Prometheus integration. Mesa is still a strong learning resource and a good future baseline, but it is not required for the first credible prototype.
+
+## Current Bottleneck
+
+After the KD-tree, SoA, NumPy, and Numba pass, the main remaining cost at moderate swarm sizes is snapshot serialization for the UI rather than the physics update itself. That means the next meaningful optimization is likely binary frame transport to the frontend or a lower-frequency snapshot path, not more CPU work on neighbor search.
 
 ## Learning Resources
 
