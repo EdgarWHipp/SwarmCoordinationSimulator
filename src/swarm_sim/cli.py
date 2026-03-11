@@ -70,7 +70,13 @@ def parse_args() -> argparse.Namespace:
         "--sleep",
         type=float,
         default=0.0,
-        help="Optional delay between rendered frames in seconds.",
+        help="Optional fixed delay between rendered frames in seconds.",
+    )
+    parser.add_argument(
+        "--factor",
+        type=float,
+        default=None,
+        help="Playback speed for live mode, where 2.0 means 2x simulated speed.",
     )
     parser.add_argument(
         "--json",
@@ -157,6 +163,15 @@ def print_live_frame(snapshot: dict[str, Any], *, cols: int, rows: int) -> None:
     sys.stdout.flush()
 
 
+def frame_delay_seconds(*, tick_seconds: float, render_every: int, factor: float | None) -> float:
+    if factor is None:
+        return 0.0
+    if factor <= 0:
+        raise ValueError("--factor must be greater than 0.")
+    simulated_frame_seconds = tick_seconds * max(1, render_every)
+    return simulated_frame_seconds / factor
+
+
 def format_metrics_text(metrics: dict[str, Any]) -> str:
     final = metrics["final"]
     lines = [
@@ -191,15 +206,21 @@ def main() -> None:
     args = parse_args()
     waypoint_count = args.waypoints if args.waypoints is not None else args.agents
     failure_tick = None if args.failure_tick < 0 else args.failure_tick
+    config = SwarmConfig(
+        drone_count=args.agents,
+        waypoint_count=waypoint_count,
+        planning_interval=args.planning_interval,
+        assignment_strategy=args.assignment_strategy,
+        physics_backend=args.backend,
+        failure_tick=failure_tick,
+    )
+    paced_delay = frame_delay_seconds(
+        tick_seconds=config.tick_seconds,
+        render_every=args.render_every,
+        factor=args.factor,
+    )
     simulator = SwarmSimulator(
-        config=SwarmConfig(
-            drone_count=args.agents,
-            waypoint_count=waypoint_count,
-            planning_interval=args.planning_interval,
-            assignment_strategy=args.assignment_strategy,
-            physics_backend=args.backend,
-            failure_tick=failure_tick,
-        ),
+        config=config,
         seed=args.seed,
     )
 
@@ -207,7 +228,9 @@ def main() -> None:
     snapshot = simulator.snapshot()
     if args.live:
         print_live_frame(snapshot, cols=args.cols, rows=args.rows)
-        if args.sleep > 0:
+        if paced_delay > 0:
+            time.sleep(paced_delay)
+        elif args.sleep > 0:
             time.sleep(args.sleep)
 
     start = time.perf_counter()
@@ -218,7 +241,9 @@ def main() -> None:
             snapshot["tick"] % max(1, args.render_every) == 0 or snapshot["tick"] == args.steps
         ):
             print_live_frame(snapshot, cols=args.cols, rows=args.rows)
-            if args.sleep > 0:
+            if paced_delay > 0:
+                time.sleep(paced_delay)
+            elif args.sleep > 0:
                 time.sleep(args.sleep)
     wall_seconds = time.perf_counter() - start
 

@@ -13,7 +13,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from swarm_sim.cli import render_ascii, summarize_metrics
+from swarm_sim.cli import frame_delay_seconds, render_ascii, summarize_metrics
 from swarm_sim.simulator import SwarmConfig, SwarmSimulator
 
 
@@ -47,6 +47,12 @@ class SwarmCliTest(unittest.TestCase):
         self.assertIn("final", metrics)
         self.assertIn("mean_cohesion_score", metrics)
         self.assertEqual(metrics["tick"], snapshots[-1]["tick"])
+
+    def test_frame_delay_seconds_uses_speed_factor(self) -> None:
+        self.assertAlmostEqual(
+            frame_delay_seconds(tick_seconds=0.08, render_every=4, factor=2.0),
+            0.16,
+        )
 
     def test_cli_json_output(self) -> None:
         result = subprocess.run(

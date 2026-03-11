@@ -93,6 +93,12 @@ Render the 2D simulation as ASCII in the terminal:
 PYTHONPATH=src python3 -m swarm_sim.cli --live --steps 240 --agents 24 --render-every 4
 ```
 
+Show the same live run at 2x simulated speed:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.cli --live --steps 240 --agents 24 --render-every 4 --factor 2
+```
+
 Print machine-readable metrics for automation or shell scripts:
 
 ```bash
