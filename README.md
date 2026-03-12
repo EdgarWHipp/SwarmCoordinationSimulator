@@ -112,7 +112,7 @@ The simulator currently exports:
   [academic.oup.com/book/40811](https://academic.oup.com/book/40811)
 
 ### Consensus and Coordination
-
+- TO DO: SwarnRaft: Leveraging Consensus for Robust Drone Swarm Coordination in GNSS-Degraded Environments
 - Raft consensus overview and visualization:
   [raft.github.io](https://raft.github.io/)
 - Olfati-Saber, Fax, Murray, *Consensus and Cooperation in Networked Multi-Agent Systems*:
