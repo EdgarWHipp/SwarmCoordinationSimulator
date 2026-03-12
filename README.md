@@ -102,125 +102,32 @@ The simulator currently exports:
 - `swarm_collision_events_total`
 - `swarm_waypoint_completions_total`
 
-This is the part that makes the project stand out in an enterprise or defense-adjacent systems interview: you are not just simulating behavior, you are instrumenting fleet health like an observable distributed platform.
 
-## Step-By-Step Build Path
-
-### Step 1: Working vertical slice
-
-Status: implemented
-
-- custom Python simulation core
-- FastAPI server
-- canvas-based browser visualizer
-- Prometheus instrumentation
-
-### Step 2: Scenario realism
-
-Recommended next:
-
-- add static obstacles and no-fly zones
-- vary radio range and packet loss
-- add leader dropout and delayed state propagation
-
-### Step 3: Experiment harness
-
-Status: implemented
-
-- seeded scenario sweeps
-- `manifest.json`, `summary.csv`, and `run_summaries.json`
-- representative playback traces for the frontend
-- metrics ready for paper-style comparison tables
-
-### Step 4: Paper-ready evaluation
-
-- compare no-consensus vs consensus routing
-- compare failure-free vs dropout scenarios
-- report mean and variance across multiple seeds
-
-### Step 5: Visual polish
-
-Status: implemented as a first pass
-
-- Next.js frontend in `web/`
-- 3D playback with Three.js via React Three Fiber
-- static artifact loading for Vercel-friendly hosting
-
-## Experiment Artifacts
-
-The batch runner writes:
-
-- `artifacts/experiments/latest/manifest.json`
-- `artifacts/experiments/latest/summary.csv`
-- `artifacts/experiments/latest/run_summaries.json`
-- `artifacts/experiments/latest/playbacks/*.json`
-
-The same artifact set can be mirrored into `web/public/data/latest/` for frontend playback.
-
-Each scenario contains:
-
-- aggregate metrics across multiple seeds
-- per-seed run summaries
-- one representative trace for 3D playback
-
-This structure keeps the research workflow and the deploy workflow aligned: the paper figures and the demo UI read from the same exported data.
-
-## Vercel Deploy
-
-The recommended deployment model is:
-
-1. generate experiment artifacts with Python
-2. publish them into `web/public/data/latest`
-3. deploy `web/` as the Vercel project root
-
-For Vercel:
-
-- set the project root to `web`
-- use `npm run build`
-- the app serves static experiment JSON from `web/public/data/latest`
-
-This is simpler and more reliable than trying to host a long-running Python simulation loop on Vercel.
-
-## Why This Stack
-
-I chose a custom simulator first instead of Mesa for the initial implementation because this repo needs explicit control over timing, communication range, consensus epochs, and Prometheus integration. Mesa is still a strong learning resource and a good future baseline, but it is not required for the first credible prototype.
-
-## Learning Resources
-
-These are the highest-signal references I’d use for the next pass of this project. Links were checked on March 11, 2026.
 
 ### Swarm and Multi-Agent Foundations
 
 - Craig Reynolds, *Flocks, Herds, and Schools: A Distributed Behavioral Model*:
   [red3d.com/cwr/papers/1987/boids.html](https://red3d.com/cwr/papers/1987/boids.html)
-  Start here for the local-rules mental model behind flocking and collision avoidance.
 - Eric Bonabeau, Marco Dorigo, Guy Theraulaz, *Swarm Intelligence: From Natural to Artificial Systems*:
   [academic.oup.com/book/40811](https://academic.oup.com/book/40811)
-  Best broad theory reference if you want the project to read like research instead of a demo.
 
 ### Consensus and Coordination
 
 - Raft consensus overview and visualization:
   [raft.github.io](https://raft.github.io/)
-  Not a drone protocol, but the clearest way to build intuition about quorum, liveness, and failure handling.
 - Olfati-Saber, Fax, Murray, *Consensus and Cooperation in Networked Multi-Agent Systems*:
   [murray.cds.caltech.edu/index.php/Consensus_and_Cooperation_in_Networked_Multi-Agent_Systems](https://murray.cds.caltech.edu/index.php/Consensus_and_Cooperation_in_Networked_Multi-Agent_Systems)
-  Classic consensus paper for the control-theory side of distributed coordination.
 - Wang, Li, Zou, *Connectivity-maintaining Consensus of Multi-agent Systems With Communication Management Based on Predictive Control Strategy*:
   [ieee-jas.net/en/article/doi/10.1109/JAS.2023.123081](https://www.ieee-jas.net/en/article/doi/10.1109/JAS.2023.123081)
-  Useful if you want the next iteration to model communication constraints more rigorously.
 
 ### Path Planning and Current Research
 
 - NASA NTRS, *Multi-Agent Motion Planning using Deep Learning for Space Applications*:
   [ntrs.nasa.gov/citations/20220005816](https://ntrs.nasa.gov/citations/20220005816)
-  Good for understanding how multi-agent planning problems scale.
 - NASA NTRS, *UAV Path Planning for Wildfires*:
   [ntrs.nasa.gov/citations/20220015156](https://ntrs.nasa.gov/citations/20220015156)
-  Useful as a practical path-planning case study.
 - Kondo et al., *PRIMER: Perception-Aware Robust Learning-based Multiagent Trajectory Planner*:
   [arxiv.org/abs/2406.10060](https://arxiv.org/abs/2406.10060)
-  A solid recent paper for decentralized, asynchronous, collision-aware planning.
 
 ### Python and Visualization
 
@@ -250,12 +157,4 @@ These are the highest-signal references I’d use for the next pass of this proj
 - Prometheus ASGI integration:
   [prometheus.github.io/client_python/exporting/http/asgi/](https://prometheus.github.io/client_python/exporting/http/asgi/)
 
-## Suggested Next Decision
 
-Pick one direction for the next implementation pass:
-
-1. obstacle fields and no-fly zones
-2. paper plots and experiment notebooks
-3. live backend control plane on top of the static viewer
-
-If you want the fastest path to a paper-ready repo from here, I would do `2` before `3`.
