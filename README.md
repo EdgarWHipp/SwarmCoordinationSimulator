@@ -1,4 +1,6 @@
 # Swarm Coordination Simulator
+--> Phadke A, Medrano FA, Sekharan CN, Chu T. Designing UAV Swarm Experiments: A Simulator Selection and Experiment Design Process. Sensors (Basel). 2023 Aug 23;23(17):7359. doi: 10.3390/s23177359. PMID: 37687817; PMCID: PMC10490248.
+
 
 A lightweight autonomous swarm coordination simulator built in Python with:
 
