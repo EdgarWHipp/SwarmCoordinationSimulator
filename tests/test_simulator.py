@@ -54,6 +54,50 @@ class SwarmSimulatorTest(unittest.TestCase):
         self.assertIn("cohesion_score", snapshot["summary"])
         self.assertIn("consensus_success_ratio", snapshot["summary"])
 
+    def test_failure_recovery_reassigns_within_window(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=5,
+                waypoint_count=4,
+                planning_interval=10,
+                failure_tick=None,
+                failure_recovery_ticks=2,
+            ),
+            seed=17,
+        )
+
+        first_snapshot = simulator.step()
+        assigned_drone = next(
+            drone["drone_id"]
+            for drone in first_snapshot["drones"]
+            if not drone["failed"] and drone["target_waypoint_id"] is not None
+        )
+        simulator.inject_failure(assigned_drone)
+
+        recovery_snapshot = simulator.step()
+        recovery_snapshot = simulator.step()
+
+        self.assertEqual(recovery_snapshot["summary"]["failure_recoveries_total"], 1)
+        self.assertLessEqual(
+            recovery_snapshot["summary"]["last_failure_recovery_latency_ticks"],
+            2,
+        )
+        self.assertFalse(recovery_snapshot["summary"]["failure_recovery_pending"])
+
+    def test_dynamic_tick_update_keeps_elapsed_time_monotonic(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(drone_count=4, waypoint_count=4, planning_interval=1, failure_tick=None),
+            seed=23,
+        )
+
+        simulator.step()
+        simulator.update_config(tick_seconds=0.04, render_stride=2)
+        snapshot = simulator.step()
+
+        self.assertEqual(snapshot["config"]["tick_seconds"], 0.04)
+        self.assertEqual(snapshot["config"]["render_stride"], 2)
+        self.assertEqual(snapshot["elapsed_seconds"], 0.12)
+
     def test_taichi_backend_smoke(self) -> None:
         if not taichi_available():
             self.skipTest("Taichi is not installed")

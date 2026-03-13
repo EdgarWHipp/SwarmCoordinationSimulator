@@ -6,7 +6,7 @@ A lightweight autonomous swarm coordination simulator built in Python with:
 
 - decentralized waypoint negotiation
 - boids-style local motion control
-- failure injection and rebalancing
+- failure injection, re-election, and waypoint rebalancing
 - WebSocket-driven browser visualization
 - Prometheus metrics for swarm health observability
 - an optimized simulation core built around SoA `float32` arrays, `cKDTree`, NumPy, and Numba
@@ -72,13 +72,21 @@ Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 Useful endpoints:
 
 - `/api/state` for the latest snapshot
+- `/api/config` to read or update `tick_seconds` and `render_stride` without restart
 - `/ws` for live state streaming
 - `/metrics` for Prometheus scraping
+- `/health` for a lightweight service-health payload
 
 Run the simulator tests with:
 
 ```bash
 python3 -m unittest discover -s tests
+```
+
+Enable faster JSON serialization on deployments that need it with:
+
+```bash
+pip install .[speedups]
 ```
 
 ### Terminal CLI
@@ -134,6 +142,18 @@ PYTHONPATH=src python3 -m swarm_sim.profile --backend taichi --agents 512 --step
 
 If you have a GPU-enabled Taichi environment, set `SWARM_TAICHI_ARCH=gpu` before running.
 
+Benchmark transport encoding overhead with:
+
+```bash
+PYTHONPATH=src python3 -m swarm_sim.benchmark_transport --agents 128 --steps 24 --iterations 1000
+```
+
+The WebSocket endpoint also supports msgpack binary frames for non-browser clients:
+
+```text
+/ws?encoding=msgpack
+```
+
 ### Experiment runner
 
 Generate repeatable experiment artifacts:
@@ -174,6 +194,15 @@ The simulator currently exports:
 - `swarm_waypoint_completions_total`
 
 This is the part that makes the project stand out in an enterprise or defense-adjacent systems interview: you are not just simulating behavior, you are instrumenting fleet health like an observable distributed platform.
+
+## Failure Recovery
+
+Single-agent dropout now triggers a bounded recovery path instead of waiting indefinitely for the next normal planning epoch:
+
+- the failed drone is still marked failed and removed from motion
+- any orphaned waypoint claim is queued for re-election
+- the swarm runs a recovery election no later than `failure_recovery_ticks`
+- the recovered assignment latency is included in the simulation summary
 
 ## Step-By-Step Build Path
 
@@ -312,5 +341,4 @@ These are the highest-signal references I’d use for the next pass of this proj
   [prometheus.github.io/client_python/](https://prometheus.github.io/client_python/)
 - Prometheus ASGI integration:
   [prometheus.github.io/client_python/exporting/http/asgi/](https://prometheus.github.io/client_python/exporting/http/asgi/)
-
 

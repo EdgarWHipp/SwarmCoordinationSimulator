@@ -9,18 +9,23 @@ from dataclasses import asdict
 from itertools import count
 from typing import Any
 
-import msgpack
 from fastapi import WebSocket
 
 from swarm_sim.simulator import SwarmConfig, SwarmMetrics, SwarmSimulator
+from swarm_sim.transport import (
+    dump_websocket_json_text,
+    json_backend_name,
+    pack_msgpack,
+    unpack_msgpack,
+)
 
 
 def _pack_message(payload: dict[str, Any]) -> bytes:
-    return msgpack.packb(payload, use_bin_type=True)
+    return pack_msgpack(payload)
 
 
 def _unpack_message(payload: bytes) -> dict[str, Any]:
-    return msgpack.unpackb(payload, raw=False)
+    return unpack_msgpack(payload)
 
 
 def _worker_main(
@@ -60,6 +65,16 @@ def _worker_main(
                     running = True
                     next_tick_at = time.perf_counter() + simulator.config.tick_seconds
                     payload = {"running": True}
+                elif name == "configure":
+                    payload = {
+                        "config": simulator.update_config(
+                            tick_seconds=command.get("tick_seconds"),
+                            render_stride=command.get("render_stride"),
+                        ),
+                        "snapshot": simulator.snapshot(),
+                    }
+                    if running:
+                        next_tick_at = time.perf_counter() + simulator.config.tick_seconds
                 elif name == "fail-random":
                     failed_drone_id = simulator.inject_random_failure()
                     payload = {
@@ -95,7 +110,11 @@ def _worker_main(
             now = time.perf_counter()
 
         if latest_snapshot is not None and latest_snapshot["tick"] % simulator.config.render_stride == 0:
-            state_queue.put(_pack_message({"kind": "frame", "payload": latest_snapshot}))
+            state_queue.put(
+                _pack_message(
+                    {"kind": "frame", "payload_msgpack": pack_msgpack(latest_snapshot)}
+                )
+            )
 
 
 class SimulationRuntime:
@@ -116,6 +135,7 @@ class SimulationRuntime:
             daemon=True,
         )
         self.clients: set[WebSocket] = set()
+        self.client_encodings: dict[WebSocket, str] = {}
         self.pending: dict[int, asyncio.Future[Any]] = {}
         self.request_ids = count(1)
         self.reader_task: asyncio.Task[None] | None = None
@@ -123,6 +143,9 @@ class SimulationRuntime:
         self.last_collision_total = 0
         self.last_completion_total = 0
         self.latest_snapshot = SwarmSimulator(config=self.config, seed=self.seed).snapshot()
+        self.latest_snapshot_json = dump_websocket_json_text(self.latest_snapshot)
+        self.latest_snapshot_msgpack = pack_msgpack(self.latest_snapshot)
+        self.websocket_json_backend = json_backend_name()
         self._observe_snapshot(self.latest_snapshot)
 
     async def start(self) -> None:
@@ -142,14 +165,19 @@ class SimulationRuntime:
 
     async def _reader_loop(self) -> None:
         while True:
-            packed_message = await asyncio.to_thread(self.state_queue.get)
+            try:
+                packed_message = await asyncio.to_thread(self.state_queue.get, True, 0.25)
+            except queue.Empty:
+                continue
             message = _unpack_message(packed_message)
             kind = message["kind"]
 
             if kind == "frame":
-                self.latest_snapshot = message["payload"]
+                packed_snapshot = message["payload_msgpack"]
+                snapshot = unpack_msgpack(packed_snapshot)
+                self._cache_snapshot(snapshot, packed_snapshot)
                 self._observe_snapshot(self.latest_snapshot)
-                await self.broadcast(self.latest_snapshot)
+                await self.broadcast()
                 continue
 
             request_id = int(message["request_id"])
@@ -171,13 +199,15 @@ class SimulationRuntime:
 
         if isinstance(response, dict):
             if "tick" in response:
-                self.latest_snapshot = response
+                self._cache_snapshot(response)
                 self._observe_snapshot(self.latest_snapshot)
-                await self.broadcast(self.latest_snapshot)
+                await self.broadcast()
             elif "snapshot" in response and isinstance(response["snapshot"], dict):
-                self.latest_snapshot = response["snapshot"]
+                self._cache_snapshot(response["snapshot"])
+                if "config" in response and isinstance(response["config"], dict):
+                    self.config = SwarmConfig(**response["config"])
                 self._observe_snapshot(self.latest_snapshot)
-                await self.broadcast(self.latest_snapshot)
+                await self.broadcast()
 
         return response
 
@@ -186,6 +216,25 @@ class SimulationRuntime:
 
     async def reset(self) -> dict[str, Any]:
         return await self.request("reset")
+
+    async def current_config(self) -> dict[str, Any]:
+        return self.config.as_dict()
+
+    async def update_config(
+        self,
+        *,
+        tick_seconds: float | None = None,
+        render_stride: int | None = None,
+    ) -> dict[str, Any]:
+        response = await self.request(
+            "configure",
+            tick_seconds=tick_seconds,
+            render_stride=render_stride,
+        )
+        if isinstance(response, dict) and "config" in response and isinstance(response["config"], dict):
+            self.config = SwarmConfig(**response["config"])
+            return response["config"]
+        raise RuntimeError("Worker did not return an updated config payload.")
 
     async def pause(self) -> dict[str, bool]:
         return await self.request("pause")
@@ -199,20 +248,39 @@ class SimulationRuntime:
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         self.clients.add(websocket)
-        await websocket.send_json(self.latest_snapshot)
+        encoding = websocket.query_params.get("encoding", "json").lower()
+        if encoding not in {"json", "msgpack"}:
+            encoding = "json"
+        self.client_encodings[websocket] = encoding
+        await self._send_snapshot(websocket, encoding)
 
     def disconnect(self, websocket: WebSocket) -> None:
         self.clients.discard(websocket)
+        self.client_encodings.pop(websocket, None)
 
-    async def broadcast(self, snapshot: dict[str, Any]) -> None:
+    async def broadcast(self) -> None:
         stale_clients: list[WebSocket] = []
         for client in list(self.clients):
             try:
-                await client.send_json(snapshot)
+                await self._send_snapshot(client, self.client_encodings.get(client, "json"))
             except RuntimeError:
                 stale_clients.append(client)
         for client in stale_clients:
             self.disconnect(client)
+
+    async def _send_snapshot(self, websocket: WebSocket, encoding: str) -> None:
+        if encoding == "msgpack":
+            await websocket.send_bytes(self.latest_snapshot_msgpack)
+            return
+        await websocket.send_text(self.latest_snapshot_json)
+
+    def _cache_snapshot(self, snapshot: dict[str, Any], packed_snapshot: bytes | None = None) -> None:
+        self.latest_snapshot = snapshot
+        self.latest_snapshot_msgpack = packed_snapshot or pack_msgpack(snapshot)
+        self.latest_snapshot_json = dump_websocket_json_text(snapshot)
+        config_data = snapshot.get("config")
+        if isinstance(config_data, dict):
+            self.config = SwarmConfig(**config_data)
 
     def _observe_snapshot(self, snapshot: dict[str, Any]) -> None:
         summary = snapshot.get("summary")

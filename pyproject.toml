@@ -29,11 +29,15 @@ dev = [
 gpu = [
   "taichi>=1.7,<2.0",
 ]
+speedups = [
+  "orjson>=3.10,<4.0",
+]
 
 [project.scripts]
 swarm-sim = "swarm_sim.server:main"
 swarm-cli = "swarm_sim.cli:main"
 swarm-experiments = "swarm_sim.experiments:main"
+swarm-benchmark-transport = "swarm_sim.benchmark_transport:main"
 swarm-profile = "swarm_sim.profile:main"
 
 [tool.hatch.build.targets.wheel]

@@ -9,6 +9,7 @@ from numba import njit
 from scipy.spatial import cKDTree
 
 from swarm_sim.navigation import NavigationGraph
+from swarm_sim.raft import RaftCoordinator
 
 if TYPE_CHECKING:
     from swarm_sim.taichi_backend import TaichiBoidsBackend
@@ -52,7 +53,7 @@ class SwarmConfig:
     tick_seconds: float = 0.08
     planning_interval: int = 6
     render_stride: int = 4
-    assignment_strategy: str = "consensus"
+    assignment_strategy: str = "raft"
     physics_backend: str = "numpy"
     max_speed: float = 85.0
     neighbor_radius: float = 150.0
@@ -69,6 +70,10 @@ class SwarmConfig:
     waypoint_weight: float = 2.6
     boundary_weight: float = 1.1
     failure_tick: int | None = 240
+    failure_recovery_ticks: int = 2
+    raft_heartbeat_ticks: int = 1
+    raft_election_timeout_min_ticks: int = 4
+    raft_election_timeout_max_ticks: int = 8
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -91,6 +96,10 @@ class SwarmConfig:
             "navigation_cols": self.navigation_cols,
             "navigation_rows": self.navigation_rows,
             "failure_tick": self.failure_tick,
+            "failure_recovery_ticks": self.failure_recovery_ticks,
+            "raft_heartbeat_ticks": self.raft_heartbeat_ticks,
+            "raft_election_timeout_min_ticks": self.raft_election_timeout_min_ticks,
+            "raft_election_timeout_max_ticks": self.raft_election_timeout_max_ticks,
         }
 
 
@@ -437,6 +446,13 @@ class SwarmSimulator:
             cols=self.config.navigation_cols,
             rows=self.config.navigation_rows,
         )
+        self.raft = RaftCoordinator(
+            node_count=self.config.drone_count,
+            rng=self.rng,
+            heartbeat_ticks=self.config.raft_heartbeat_ticks,
+            election_timeout_min_ticks=self.config.raft_election_timeout_min_ticks,
+            election_timeout_max_ticks=self.config.raft_election_timeout_max_ticks,
+        )
         self.taichi_backend: TaichiBoidsBackend | None = None
         if self.config.physics_backend == "taichi":
             from swarm_sim.taichi_backend import TaichiBoidsBackend
@@ -450,6 +466,11 @@ class SwarmSimulator:
         self.total_collision_events = 0
         self.last_new_collisions = 0
         self.last_assignment_changes = 0
+        self.pending_failure_recovery_deadline_tick: int | None = None
+        self.pending_failure_recovery_since_tick: int | None = None
+        self.pending_failure_waypoints: set[int] = set()
+        self.last_failure_recovery_latency_ticks = 0
+        self.failure_recoveries_total = 0
         self.last_collision_keys = np.empty(0, dtype=np.int64)
         self.events: deque[str] = deque(maxlen=8)
 
@@ -476,6 +497,7 @@ class SwarmSimulator:
         if seed is not None:
             self.seed = seed
         self.rng = np.random.default_rng(self.seed)
+        self.raft.rng = self.rng
 
         self.tick = 0
         self.elapsed_seconds = 0.0
@@ -485,6 +507,11 @@ class SwarmSimulator:
         self.total_collision_events = 0
         self.last_new_collisions = 0
         self.last_assignment_changes = 0
+        self.pending_failure_recovery_deadline_tick = None
+        self.pending_failure_recovery_since_tick = None
+        self.pending_failure_waypoints.clear()
+        self.last_failure_recovery_latency_ticks = 0
+        self.failure_recoveries_total = 0
         self.last_collision_keys = np.empty(0, dtype=np.int64)
         self.events.clear()
 
@@ -498,6 +525,7 @@ class SwarmSimulator:
         self.waypoint_claimed_by.fill(-1)
         self.waypoint_completions_by_id.fill(0)
         self._refresh_waypoint_nav_nodes()
+        self.raft.reset(current_tick=self.tick)
 
         self.events.append("Simulation reset with vectorized SoA state.")
         snapshot = self.snapshot()
@@ -510,6 +538,7 @@ class SwarmSimulator:
             "tick": self.tick,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "config": self.config.as_dict(),
+            "raft": self.raft.status(self.failed, self.agent_ids),
             "drones": self._serialize_drones(),
             "waypoints": self._serialize_waypoints(),
             "events": list(self.events),
@@ -518,12 +547,20 @@ class SwarmSimulator:
 
     def step(self) -> dict[str, Any]:
         self.tick += 1
-        self.elapsed_seconds = round(self.tick * self.config.tick_seconds, 2)
+        self.elapsed_seconds = round(self.elapsed_seconds + self.config.tick_seconds, 2)
 
         if self.config.failure_tick is not None and self.tick == self.config.failure_tick:
             self.inject_random_failure()
 
-        if self.tick == 1 or self.tick % self.config.planning_interval == 0:
+        if self.config.assignment_strategy == "raft":
+            for event in self.raft.tick(current_tick=self.tick, failed=self.failed):
+                self.events.append(event.replace("node ", "drone-"))
+
+        planning_due = self.tick == 1 or self.tick % self.config.planning_interval == 0
+        recovery_due = self._failure_recovery_due()
+        if recovery_due:
+            self._run_failure_recovery()
+        elif planning_due:
             self._plan_waypoints()
 
         self._refresh_routes()
@@ -561,10 +598,80 @@ class SwarmSimulator:
         self.route_dirty[agent_index] = False
         if previous_target >= 0:
             self.waypoint_claimed_by[previous_target] = -1
+            self._schedule_failure_recovery(previous_target)
         self.events.append(
             f"{drone_id} dropped out at tick {self.tick}; routing marked dirty for reassignment."
         )
         return drone_id
+
+    def update_config(
+        self,
+        *,
+        tick_seconds: float | None = None,
+        render_stride: int | None = None,
+    ) -> dict[str, Any]:
+        changed: list[str] = []
+        if tick_seconds is not None:
+            if tick_seconds <= 0:
+                raise ValueError("tick_seconds must be greater than 0.")
+            self.config.tick_seconds = float(tick_seconds)
+            changed.append(f"tick_seconds={self.config.tick_seconds:.3f}")
+        if render_stride is not None:
+            if render_stride < 1:
+                raise ValueError("render_stride must be at least 1.")
+            self.config.render_stride = int(render_stride)
+            changed.append(f"render_stride={self.config.render_stride}")
+        if changed:
+            self.events.append(f"Runtime config updated: {', '.join(changed)}.")
+        return self.config.as_dict()
+
+    def _schedule_failure_recovery(self, waypoint_index: int) -> None:
+        if self.config.failure_recovery_ticks < 0:
+            raise ValueError("failure_recovery_ticks must be non-negative.")
+        self.pending_failure_waypoints.add(int(waypoint_index))
+        if self.pending_failure_recovery_since_tick is None:
+            self.pending_failure_recovery_since_tick = self.tick
+        deadline = self.tick + self.config.failure_recovery_ticks
+        if (
+            self.pending_failure_recovery_deadline_tick is None
+            or deadline < self.pending_failure_recovery_deadline_tick
+        ):
+            self.pending_failure_recovery_deadline_tick = deadline
+
+    def _failure_recovery_due(self) -> bool:
+        if self.pending_failure_recovery_deadline_tick is None:
+            return False
+        return (
+            self.tick == 1
+            or self.tick % self.config.planning_interval == 0
+            or self.tick >= self.pending_failure_recovery_deadline_tick
+        )
+
+    def _run_failure_recovery(self) -> None:
+        orphaned_waypoints = sorted(self.pending_failure_waypoints)
+        self._plan_waypoints()
+
+        latency = (
+            self.tick - self.pending_failure_recovery_since_tick
+            if self.pending_failure_recovery_since_tick is not None
+            else 0
+        )
+        self.last_failure_recovery_latency_ticks = int(latency)
+        self.failure_recoveries_total += 1
+
+        if orphaned_waypoints:
+            reassigned_count = int(
+                np.count_nonzero(self.waypoint_claimed_by[np.asarray(orphaned_waypoints)] >= 0)
+            )
+            self.events.append(
+                "Failure recovery election reassigned "
+                f"{reassigned_count}/{len(orphaned_waypoints)} orphaned waypoints in "
+                f"{self.last_failure_recovery_latency_ticks} tick(s)."
+            )
+
+        self.pending_failure_recovery_deadline_tick = None
+        self.pending_failure_recovery_since_tick = None
+        self.pending_failure_waypoints.clear()
 
     def _spawn_drones(self) -> None:
         angles = np.linspace(
@@ -672,13 +779,44 @@ class SwarmSimulator:
             - load_penalty
         ).astype(np.float32)
 
+    def _apply_assignments(self, assignments_by_agent: np.ndarray) -> tuple[int, int]:
+        previous_targets = self.target_waypoints.copy()
+
+        self.target_waypoints.fill(-1)
+        self.target_waypoints[:] = assignments_by_agent
+        self.target_waypoints[self.failed] = -1
+
+        self.waypoint_claimed_by.fill(-1)
+        for agent_index in np.flatnonzero((~self.failed) & (self.target_waypoints >= 0)):
+            self.waypoint_claimed_by[self.target_waypoints[agent_index]] = agent_index
+
+        changed_mask = (previous_targets != self.target_waypoints) & (~self.failed)
+        self.route_dirty[changed_mask] = True
+        assignment_changes = int(np.count_nonzero(changed_mask))
+        committed = int(np.count_nonzero((~self.failed) & (self.target_waypoints >= 0)))
+        self.last_assignment_changes = assignment_changes
+        self.consensus_rounds += 1
+        self.consensus_commits += committed
+        return assignment_changes, committed
+
+    def _greedy_assignments_for_active(
+        self,
+        *,
+        active_indices: np.ndarray,
+        score_matrix: np.ndarray,
+    ) -> np.ndarray:
+        full_assignments = np.full(self.config.drone_count, -1, dtype=np.int32)
+        active_assignments = _resolve_greedy_assignments(score_matrix)
+        full_assignments[active_indices] = active_assignments
+        full_assignments[self.failed] = -1
+        return full_assignments
+
     def _plan_waypoints(self) -> None:
         active_indices = np.flatnonzero(~self.failed)
         if active_indices.size == 0:
             return
 
         score_matrix = self._score_matrix(active_indices)
-        previous_targets = self.target_waypoints.copy()
 
         if self.config.assignment_strategy == "consensus":
             proposals = np.argmax(score_matrix, axis=1).astype(np.int32)
@@ -696,28 +834,42 @@ class SwarmSimulator:
                 score_matrix,
                 self.config.waypoint_count,
             )
+            full_assignments = np.full(self.config.drone_count, -1, dtype=np.int32)
+            full_assignments[active_indices] = assignments
+            full_assignments[self.failed] = -1
+            self._apply_assignments(full_assignments)
         elif self.config.assignment_strategy == "greedy":
-            assignments = _resolve_greedy_assignments(score_matrix)
-            committed = int(np.count_nonzero(assignments >= 0))
+            full_assignments = self._greedy_assignments_for_active(
+                active_indices=active_indices,
+                score_matrix=score_matrix,
+            )
+            self._apply_assignments(full_assignments)
+            committed = int(np.count_nonzero(full_assignments >= 0))
             contention_count = 0
+        elif self.config.assignment_strategy == "raft":
+            proposed_assignments = self._greedy_assignments_for_active(
+                active_indices=active_indices,
+                score_matrix=score_matrix,
+            )
+            committed_assignments, raft_events = self.raft.propose_assignments(
+                current_tick=self.tick,
+                failed=self.failed,
+                assignments=proposed_assignments,
+            )
+            if committed_assignments is None:
+                self.last_assignment_changes = 0
+                for event in raft_events:
+                    self.events.append(event)
+                return
+            self._apply_assignments(committed_assignments.astype(np.int32))
+            committed = int(np.count_nonzero(committed_assignments >= 0))
+            contention_count = 0
+            for event in raft_events:
+                self.events.append(event)
         else:
             raise ValueError(
                 f"Unsupported assignment_strategy={self.config.assignment_strategy!r}"
             )
-
-        self.target_waypoints.fill(-1)
-        self.target_waypoints[active_indices] = assignments
-        self.target_waypoints[self.failed] = -1
-
-        self.waypoint_claimed_by.fill(-1)
-        valid_assignments = assignments >= 0
-        self.waypoint_claimed_by[assignments[valid_assignments]] = active_indices[valid_assignments]
-
-        changed_mask = (previous_targets != self.target_waypoints) & (~self.failed)
-        self.route_dirty[changed_mask] = True
-        self.consensus_rounds += 1
-        self.consensus_commits += committed
-        self.last_assignment_changes = int(np.count_nonzero(changed_mask))
 
         if self.last_assignment_changes:
             self.events.append(
@@ -1000,16 +1152,20 @@ class SwarmSimulator:
             if active_count
             else 0.0
         )
-        consensus_ratio = (
-            min(1.0, self.consensus_commits / (self.consensus_rounds * max(1, active_count)))
-            if self.consensus_rounds
+        committed_assignment_ratio = (
+            float(np.count_nonzero(active_mask & (self.target_waypoints >= 0))) / active_count
+            if active_count
             else 0.0
+        )
+        consensus_ratio = (
+            committed_assignment_ratio
         )
         completion_rate = (
             self.waypoint_completions / max(self.elapsed_seconds / 60.0, 1e-6)
             if self.elapsed_seconds > 0
             else 0.0
         )
+        raft_status = self.raft.status(self.failed, self.agent_ids)
         return {
             "active_agents": active_count,
             "failed_agents": int(np.count_nonzero(self.failed)),
@@ -1021,6 +1177,14 @@ class SwarmSimulator:
             "consensus_success_ratio": round(consensus_ratio, 3),
             "dropout_detected": bool(np.any(self.failed)),
             "assignment_changes": self.last_assignment_changes,
+            "failure_recovery_pending": bool(self.pending_failure_waypoints),
+            "last_failure_recovery_latency_ticks": self.last_failure_recovery_latency_ticks,
+            "failure_recoveries_total": self.failure_recoveries_total,
+            "raft_term": raft_status["term"],
+            "raft_commit_index": raft_status["commit_index"],
+            "raft_log_length": raft_status["log_length"],
+            "raft_leader_id": raft_status["leader_id"],
+            "raft_quorum_available": raft_status["quorum_available"],
             "waypoint_completions": self.waypoint_completions,
             "waypoint_completion_rate_per_min": round(completion_rate, 2),
         }

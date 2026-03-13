@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
+from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
 from prometheus_client import make_asgi_app
 
 from swarm_sim.runtime import SimulationRuntime
+
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def create_app() -> FastAPI:
@@ -31,8 +36,14 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/")
-    async def index() -> RedirectResponse:
-        return RedirectResponse(url="http://localhost:3000")
+    async def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/health")
+    async def health() -> JSONResponse:
+        return JSONResponse(
+            {"service": "swarm-sim", "status": "ok", "docs": "/docs", "ws": "/ws", "config": "/api/config"}
+        )
 
     @app.get("/api/state")
     async def get_state() -> JSONResponse:
@@ -54,12 +65,36 @@ def create_app() -> FastAPI:
     async def fail_random() -> JSONResponse:
         return JSONResponse(await runtime.inject_random_failure())
 
+    @app.get("/api/config")
+    async def get_config() -> JSONResponse:
+        return JSONResponse(
+            {
+                "config": await runtime.current_config(),
+                "websocket_json_backend": runtime.websocket_json_backend,
+                "websocket_encodings": ["json", "msgpack"],
+            }
+        )
+
+    @app.post("/api/config")
+    async def update_config(payload: dict[str, Any] = Body(...)) -> JSONResponse:
+        config = await runtime.update_config(
+            tick_seconds=payload.get("tick_seconds"),
+            render_stride=payload.get("render_stride"),
+        )
+        return JSONResponse(
+            {
+                "config": config,
+                "websocket_json_backend": runtime.websocket_json_backend,
+                "websocket_encodings": ["json", "msgpack"],
+            }
+        )
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await runtime.connect(websocket)
         try:
             while True:
-                await websocket.receive_text()
+                await websocket.receive()
         except WebSocketDisconnect:
             runtime.disconnect(websocket)
 

@@ -37,13 +37,13 @@ export default function SwarmConsole() {
         if (cancelled) return;
         setManifest({
           ...data,
+          // Only expose the single live scenario — strip static playback scenarios
           scenarios: [
-            { name: "Live Backend", description: "Real-time stream from the Python simulator." },
-            ...data.scenarios,
+            { name: "Raft Consensus", description: "Real-time stream from the Python simulator running a Raft-inspired quorum consensus protocol for decentralised waypoint assignment." },
           ],
         });
-        setStatus("Live Backend");
-        startTransition(() => setSelectedScenarioName("Live Backend"));
+        setStatus("Raft Consensus");
+        startTransition(() => setSelectedScenarioName("Raft Consensus"));
       } catch (e) {
         if (!cancelled) setLoadError(e.message);
       }
@@ -63,7 +63,7 @@ export default function SwarmConsole() {
     let socket = null;
     if (!selectedScenario) return;
 
-    if (selectedScenario.name === "Live Backend") {
+    if (selectedScenario.name === "Raft Consensus") {
       setIsLive(true);
       setPlayback({ frames: [], config: { width: 1280, height: 720 } });
       setLiveFrame(null);
