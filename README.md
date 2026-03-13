@@ -314,6 +314,15 @@ These are the highest-signal references I’d use for the next pass of this proj
 
 ### Consensus and Coordination
 - TO DO: SwarnRaft: Leveraging Consensus for Robust Drone Swarm Coordination in GNSS-Degraded Environments
+- TO DO: Guangquan Zeng, Wan Hu, Yongchao Zhou, Desheng Zheng, Xiaoyu Li, Chuang Shi,
+RCA-SI: A Rapid Consensus Algorithm for Swarm Intelligence in unstable network environments,
+Journal of Network and Computer Applications,
+Volume 241,
+2025,
+104202,
+ISSN 1084-8045,
+https://doi.org/10.1016/j.jnca.2025.104202.
+(https://www.sciencedirect.com/science/article/pii/S1084804525000992)
 - Raft consensus overview and visualization:
   [raft.github.io](https://raft.github.io/)
 - Olfati-Saber, Fax, Murray, *Consensus and Cooperation in Networked Multi-Agent Systems*:
