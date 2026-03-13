@@ -1,13 +1,92 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
-import { Line, OrbitControls, Stars } from "@react-three/drei";
-
+import { Canvas, useFrame } from "@react-three/fiber";
+import { Line, OrbitControls } from "@react-three/drei";
+import { useRef, useEffect } from "react";
+import * as THREE from "three";
 
 function worldPosition(width, height, x, y, elevation) {
   return [x - width / 2, elevation, y - height / 2];
 }
 
+function DroneMesh({ drone, width, height, tick, index }) {
+  const groupRef = useRef();
+  
+  const targetPos = new THREE.Vector3(...worldPosition(
+    width, height, drone.position.x, drone.position.y,
+    drone.failed ? 4 : 16 + Math.sin((tick + index) * 0.14) * 0.9
+  ));
+  const heading = Math.atan2(drone.velocity.y, drone.velocity.x);
+  const targetQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -heading, Math.PI / 2));
+
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.position.copy(targetPos);
+      groupRef.current.quaternion.copy(targetQuat);
+    }
+  }, []); // Only snap on initial mount
+
+  useFrame((state, delta) => {
+    if (groupRef.current) {
+      groupRef.current.position.lerp(targetPos, 8 * delta);
+      groupRef.current.quaternion.slerp(targetQuat, 8 * delta);
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <mesh>
+        <coneGeometry args={[5.4, 16, 4]} />
+        <meshStandardMaterial
+          color={drone.failed ? "#000000" : "#ff4d00"}
+          emissive={drone.failed ? "#000000" : "#ff4d00"}
+          emissiveIntensity={0.2}
+        />
+      </mesh>
+      <mesh position={[-4, 0, 0]}>
+        <boxGeometry args={[3.4, 1.4, 11]} />
+        <meshStandardMaterial color={drone.failed ? "#666666" : "#ffffff"} />
+      </mesh>
+    </group>
+  );
+}
+
+function WaypointMesh({ waypoint, width, height, tick, index }) {
+  const groupRef = useRef();
+  const targetPos = new THREE.Vector3(...worldPosition(
+    width, height, waypoint.position.x, waypoint.position.y,
+    4 + Math.sin((tick + index) * 0.08) * 0.6
+  ));
+
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.position.copy(targetPos);
+    }
+  }, []);
+
+  useFrame((state, delta) => {
+    if (groupRef.current) {
+      groupRef.current.position.lerp(targetPos, 5 * delta);
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[9, 1.4, 12, 32]} />
+        <meshStandardMaterial
+          color={waypoint.claimed_by ? "#000000" : "#ff4d00"}
+          emissive={waypoint.claimed_by ? "#000000" : "#ff4d00"}
+          emissiveIntensity={0.2}
+        />
+      </mesh>
+      <mesh position={[0, -3.2, 0]}>
+        <cylinderGeometry args={[2, 2, 6, 12]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
+    </group>
+  );
+}
 
 function SwarmObjects({ playback, frame }) {
   const width = playback.config.width;
@@ -17,68 +96,35 @@ function SwarmObjects({ playback, frame }) {
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.6, 0]}>
         <planeGeometry args={[width, height, 1, 1]} />
-        <meshStandardMaterial color="#0b1825" metalness={0.2} roughness={0.9} />
+        <meshStandardMaterial color="#f4f0ea" metalness={0.0} roughness={1.0} />
       </mesh>
 
       <gridHelper
-        args={[Math.max(width, height), 24, "#2e6f73", "#183747"]}
+        args={[Math.max(width, height), 24, "#000000", "#d3cec4"]}
         position={[0, -1.55, 0]}
       />
 
-      {frame.waypoints.map((waypoint, index) => {
-        const position = worldPosition(
-          width,
-          height,
-          waypoint.position.x,
-          waypoint.position.y,
-          4 + Math.sin((frame.tick + index) * 0.08) * 0.6,
-        );
+      {frame.waypoints.map((waypoint, index) => (
+        <WaypointMesh 
+          key={waypoint.waypoint_id} 
+          waypoint={waypoint} 
+          width={width} 
+          height={height} 
+          tick={frame.tick} 
+          index={index} 
+        />
+      ))}
 
-        return (
-          <group key={waypoint.waypoint_id} position={position}>
-            <mesh rotation={[Math.PI / 2, 0, 0]}>
-              <torusGeometry args={[9, 1.4, 12, 32]} />
-              <meshStandardMaterial
-                color={waypoint.claimed_by ? "#f0b05a" : "#72e0d1"}
-                emissive={waypoint.claimed_by ? "#8f5d14" : "#1c5b5f"}
-                emissiveIntensity={0.7}
-              />
-            </mesh>
-            <mesh position={[0, -3.2, 0]}>
-              <cylinderGeometry args={[2, 2, 6, 12]} />
-              <meshStandardMaterial color="#17384a" />
-            </mesh>
-          </group>
-        );
-      })}
-
-      {frame.drones.map((drone, index) => {
-        const heading = Math.atan2(drone.velocity.y, drone.velocity.x);
-        const position = worldPosition(
-          width,
-          height,
-          drone.position.x,
-          drone.position.y,
-          drone.failed ? 4 : 16 + Math.sin((frame.tick + index) * 0.14) * 0.9,
-        );
-
-        return (
-          <group key={drone.drone_id} position={position} rotation={[0, -heading, Math.PI / 2]}>
-            <mesh>
-              <coneGeometry args={[5.4, 16, 4]} />
-              <meshStandardMaterial
-                color={drone.failed ? "#ee6d82" : "#72e0d1"}
-                emissive={drone.failed ? "#802738" : "#24585d"}
-                emissiveIntensity={0.9}
-              />
-            </mesh>
-            <mesh position={[-4, 0, 0]}>
-              <boxGeometry args={[3.4, 1.4, 11]} />
-              <meshStandardMaterial color={drone.failed ? "#f7b8c2" : "#defcf8"} />
-            </mesh>
-          </group>
-        );
-      })}
+      {frame.drones.map((drone, index) => (
+        <DroneMesh 
+          key={drone.drone_id} 
+          drone={drone} 
+          width={width} 
+          height={height} 
+          tick={frame.tick} 
+          index={index} 
+        />
+      ))}
 
       {frame.drones.map((drone) => {
         if (!drone.target_waypoint_id || drone.failed) {
@@ -98,9 +144,9 @@ function SwarmObjects({ playback, frame }) {
         return (
           <Line
             key={`${drone.drone_id}-${waypoint.waypoint_id}`}
-            color="#72e0d1"
-            lineWidth={1}
-            opacity={0.28}
+            color="#ff4d00"
+            lineWidth={2}
+            opacity={0.4}
             points={[start, end]}
             transparent
           />
@@ -116,12 +162,10 @@ export default function SwarmScene({ playback, frame }) {
 
   return (
     <Canvas dpr={[1, 2]}>
-      <color attach="background" args={["#040813"]} />
-      <fog attach="fog" args={["#040813", cameraDistance * 0.7, cameraDistance * 1.6]} />
-      <ambientLight intensity={0.78} />
-      <directionalLight position={[160, 240, 120]} intensity={1.2} color="#f5f4ff" />
-      <directionalLight position={[-120, 90, -80]} intensity={0.4} color="#72e0d1" />
-      <Stars radius={900} depth={80} count={2000} factor={5} saturation={0} fade speed={0.35} />
+      <color attach="background" args={["#f4f0ea"]} />
+      <ambientLight intensity={1.5} />
+      <directionalLight position={[160, 240, 120]} intensity={2.5} color="#ffffff" castShadow />
+      <directionalLight position={[-120, 90, -80]} intensity={1.0} color="#ffedd8" />
       <SwarmObjects playback={playback} frame={frame} />
       <OrbitControls
         enablePan={false}

@@ -38,6 +38,9 @@ export default function SwarmConsole() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [status, setStatus] = useState("Loading manifest");
   const [loadError, setLoadError] = useState(null);
+  const [isLive, setIsLive] = useState(false);
+  const [liveSocket, setLiveSocket] = useState(null);
+  const [liveFrame, setLiveFrame] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,11 +55,17 @@ export default function SwarmConsole() {
         if (cancelled) {
           return;
         }
-        setManifest(nextManifest);
+        setManifest({
+          ...nextManifest,
+          scenarios: [
+            { name: "Live Backend", description: "Real-time stream from Python Simulator." },
+            ...nextManifest.scenarios
+          ]
+        });
         setStatus(`Manifest generated ${new Date(nextManifest.generated_at_utc).toLocaleString()}`);
         startTransition(() => {
           setSelectedScenarioName(
-            nextManifest.default_scenario ?? nextManifest.scenarios[0]?.name ?? "",
+            "Live Backend"
           );
         });
       } catch (error) {
@@ -80,9 +89,53 @@ export default function SwarmConsole() {
 
   useEffect(() => {
     let cancelled = false;
+    let socket = null;
+
     if (!selectedScenario) {
       return;
     }
+
+    if (selectedScenario.name === "Live Backend") {
+      setIsLive(true);
+      setStatus("Connecting to live backend...");
+      setPlayback({ frames: [] });
+      setLiveFrame(null);
+      setFrameIndex(0);
+      setIsPlaying(false);
+
+      socket = new WebSocket("ws://127.0.0.1:8000/ws");
+      setLiveSocket(socket);
+
+      socket.onopen = () => {
+        if (!cancelled) setStatus("Live | Connected");
+      };
+
+      socket.onmessage = (event) => {
+        if (cancelled) return;
+        const data = JSON.parse(event.data);
+        setLiveFrame(data);
+      };
+
+      socket.onclose = () => {
+        if (!cancelled) {
+          setStatus("Live | Disconnected");
+          setLiveSocket(null);
+        }
+      };
+
+      socket.onerror = (err) => {
+        if (!cancelled) {
+          setStatus("Live | Error connecting to backend");
+        }
+      };
+
+      return () => {
+        cancelled = true;
+        socket.close();
+      };
+    }
+
+    setIsLive(false);
 
     async function loadPlayback() {
       try {
@@ -142,7 +195,7 @@ export default function SwarmConsole() {
     }
   }, [frameIndex, playback]);
 
-  const currentFrame = playback?.frames[frameIndex] ?? null;
+  const currentFrame = isLive ? liveFrame : (playback?.frames[frameIndex] ?? null);
   const currentEvents = currentFrame?.events ?? [];
 
   return (
@@ -189,38 +242,63 @@ export default function SwarmConsole() {
               </div>
 
               <div className="button-row">
-                <button
-                  className="button ghost"
-                  onClick={() => {
-                    setFrameIndex(0);
-                    setIsPlaying(false);
-                  }}
-                  type="button"
-                >
-                  Reset
-                </button>
-                <button
-                  className="button secondary"
-                  onClick={() => {
-                    setFrameIndex((current) => Math.max(current - 1, 0));
-                    setIsPlaying(false);
-                  }}
-                  type="button"
-                >
-                  Step Back
-                </button>
-                <button
-                  className="button"
-                  onClick={() => {
-                    if (playback && frameIndex >= playback.frames.length - 1) {
-                      setFrameIndex(0);
-                    }
-                    setIsPlaying((current) => !current);
-                  }}
-                  type="button"
-                >
-                  {isPlaying ? "Pause" : "Play"}
-                </button>
+                {isLive ? (
+                  <>
+                    <button
+                      className="button secondary"
+                      onClick={() => {
+                        fetch("http://127.0.0.1:8000/api/reset", { method: "POST" }).catch(console.error);
+                      }}
+                      type="button"
+                    >
+                      Reset Sim
+                    </button>
+                    <button
+                      className="button"
+                      onClick={() => {
+                        fetch("http://127.0.0.1:8000/api/fail-random", { method: "POST" }).catch(console.error);
+                      }}
+                      type="button"
+                    >
+                      Fail Drone
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="button ghost"
+                      onClick={() => {
+                        setFrameIndex(0);
+                        setIsPlaying(false);
+                      }}
+                      type="button"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={() => {
+                        setFrameIndex((current) => Math.max(current - 1, 0));
+                        setIsPlaying(false);
+                      }}
+                      type="button"
+                    >
+                      Step Back
+                    </button>
+                    <button
+                      className="button"
+                      onClick={() => {
+                        if (playback && frameIndex >= playback.frames.length - 1) {
+                          setFrameIndex(0);
+                        }
+                        setIsPlaying((current) => !current);
+                      }}
+                      type="button"
+                    >
+                      {isPlaying ? "Pause" : "Play"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -240,25 +318,30 @@ export default function SwarmConsole() {
               )}
             </div>
 
-            <div className="timeline-panel">
+            <div className={`timeline-panel ${isLive ? 'muted' : ''}`}>
               <div className="timeline-row">
                 <div className="timeline-values">
                   <strong>Timeline</strong>
-                  <span className="timeline-caption">
-                    Frame {frameIndex + 1} / {playback?.frames.length ?? 0}
-                  </span>
+                  {isLive ? (
+                    <span className="timeline-caption">Live Streaming</span>
+                  ) : (
+                    <span className="timeline-caption">
+                      Frame {frameIndex + 1} / {playback?.frames.length ?? 0}
+                    </span>
+                  )}
                 </div>
                 <input
                   className="timeline-range"
                   type="range"
                   min={0}
                   max={Math.max((playback?.frames.length ?? 1) - 1, 0)}
-                  value={frameIndex}
+                  value={isLive ? 0 : frameIndex}
                   onChange={(event) => {
+                    if (isLive) return;
                     setFrameIndex(Number(event.target.value));
                     setIsPlaying(false);
                   }}
-                  disabled={!playback}
+                  disabled={!playback || isLive}
                 />
                 <div className="timeline-values">
                   <span>Tick {currentFrame?.tick ?? 0}</span>
@@ -284,27 +367,29 @@ export default function SwarmConsole() {
             ) : null}
           </section>
 
-          <section className="stack-card">
-            <h3>Aggregate Metrics</h3>
-            <div className="metric-grid">
-              {selectedScenario
-                ? Object.entries(selectedScenario.aggregate_metrics).map(([key, metric]) => (
-                    <article className="metric-card" key={key}>
-                      <div className="metric-label">
-                        {aggregateMetricLabels[key] ?? key}
-                      </div>
-                      <div className="metric-value">{formatMetricValue(metric.mean)}</div>
-                      <div className="metric-subtitle">
-                        stdev {formatMetricValue(metric.stdev)}
-                      </div>
-                    </article>
-                  ))
-                : null}
-            </div>
-          </section>
+          {!isLive && (
+            <section className="stack-card">
+              <h3>Aggregate Metrics</h3>
+              <div className="metric-grid">
+                {selectedScenario && selectedScenario.aggregate_metrics
+                  ? Object.entries(selectedScenario.aggregate_metrics).map(([key, metric]) => (
+                      <article className="metric-card" key={key}>
+                        <div className="metric-label">
+                          {aggregateMetricLabels[key] ?? key}
+                        </div>
+                        <div className="metric-value">{formatMetricValue(metric.mean)}</div>
+                        <div className="metric-subtitle">
+                          stdev {formatMetricValue(metric.stdev)}
+                        </div>
+                      </article>
+                    ))
+                  : null}
+              </div>
+            </section>
+          )}
 
           <section className="stack-card">
-            <h3>Representative Frame</h3>
+            <h3>{isLive ? "Live Frame" : "Representative Frame"}</h3>
             {currentFrame ? (
               <div className="metric-grid">
                 <article className="metric-card">
@@ -331,18 +416,21 @@ export default function SwarmConsole() {
             ) : null}
           </section>
 
-          <section className="stack-card">
-            <h3>Run Summaries</h3>
-            <div className="run-grid">
-              {selectedScenario?.runs.map((run) => (
-                <article className="run-card" key={`${run.scenario_name}-${run.seed}`}>
-                  <strong>Seed {run.seed}</strong>
-                  completions {run.final_waypoint_completions} | collisions{" "}
-                  {run.final_collision_events_total} | cohesion {run.mean_cohesion_score.toFixed(2)}
-                </article>
-              ))}
-            </div>
-          </section>
+          {!isLive && (
+            <section className="stack-card">
+              <h3>Run Summaries</h3>
+              <div className="run-grid">
+                {selectedScenario?.runs?.map((run) => (
+                  <article className="run-card" key={`${run.scenario_name}-${run.seed}`}>
+                    <strong>Seed {run.seed}</strong>
+                    <br />
+                    completions {run.final_waypoint_completions} | collisions{" "}
+                    {run.final_collision_events_total} | cohesion {run.mean_cohesion_score.toFixed(2)}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="stack-card">
             <h3>Recent Events</h3>

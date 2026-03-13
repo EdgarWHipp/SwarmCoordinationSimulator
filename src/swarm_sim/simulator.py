@@ -599,22 +599,22 @@ class SwarmSimulator:
         columns = max(2, int(np.ceil(self.config.waypoint_count / 2)))
         rows = int(np.ceil(self.config.waypoint_count / columns))
         x_positions = np.linspace(
-            self.config.width / (columns + 1),
-            self.config.width - self.config.width / (columns + 1),
+            80.0,
+            self.config.width - 80.0,
             columns,
             dtype=np.float32,
         )
         y_positions = np.linspace(
-            self.config.height / (rows + 1),
-            self.config.height - self.config.height / (rows + 1),
+            80.0,
+            self.config.height - 80.0,
             rows,
             dtype=np.float32,
         )
         grid_x, grid_y = np.meshgrid(x_positions, y_positions)
         base = np.stack((grid_x.ravel(), grid_y.ravel()), axis=1)[: self.config.waypoint_count]
         jitter = self.rng.uniform(
-            low=np.array([-70.0, -55.0], dtype=np.float32),
-            high=np.array([70.0, 55.0], dtype=np.float32),
+            low=np.array([-120.0, -90.0], dtype=np.float32),
+            high=np.array([120.0, 90.0], dtype=np.float32),
             size=(self.config.waypoint_count, 2),
         ).astype(np.float32)
         self.waypoint_positions = base.astype(np.float32) + jitter

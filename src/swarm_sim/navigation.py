@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from heapq import heappop, heappush
 
 import numpy as np
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import shortest_path
 from scipy.spatial import cKDTree
 
 
@@ -41,6 +42,11 @@ class NavigationGraph:
         def node_id(row: int, col: int) -> int:
             return row * cols + col
 
+        # Collect edges for the sparse matrix
+        edges_row = []
+        edges_col = []
+        edges_data = []
+
         for row in range(rows):
             for col in range(cols):
                 current = node_id(row, col)
@@ -51,32 +57,46 @@ class NavigationGraph:
                     if next_row < 0 or next_row >= rows or next_col < 0 or next_col >= cols:
                         continue
                     neighbor = node_id(next_row, next_col)
+                    cost = float(np.linalg.norm(node_positions[current] - node_positions[neighbor]))
+                    
                     neighbor_indices[current, slots] = neighbor
-                    edge_costs[current, slots] = np.float32(
-                        np.linalg.norm(node_positions[current] - node_positions[neighbor])
-                    )
+                    edge_costs[current, slots] = np.float32(cost)
                     slots += 1
 
+                    edges_row.append(current)
+                    edges_col.append(neighbor)
+                    edges_data.append(cost)
+
+        graph_sparse = csr_matrix((edges_data, (edges_row, edges_col)), shape=(node_count, node_count))
+        
+        path_costs, predecessors = shortest_path(
+            csgraph=graph_sparse, 
+            directed=False, 
+            return_predecessors=True
+        )
+        
+        path_costs = path_costs.astype(np.float32)
+
         next_hop = np.full((node_count, node_count), -1, dtype=np.int32)
-        path_costs = np.full((node_count, node_count), np.inf, dtype=np.float32)
 
         for start in range(node_count):
             next_hop[start, start] = start
-            path_costs[start, start] = np.float32(0.0)
             for goal in range(node_count):
                 if start == goal:
                     continue
-                path, cost = _a_star(
-                    start=start,
-                    goal=goal,
-                    node_positions=node_positions,
-                    neighbor_indices=neighbor_indices,
-                    edge_costs=edge_costs,
-                )
-                if not path:
+                # traceback predecessors to find the next hop from start towards goal
+                curr = goal
+                prev = predecessors[start, curr]
+                
+                # if unreachable (-9999 from scipy)
+                if prev < 0:
                     continue
-                next_hop[start, goal] = path[1] if len(path) > 1 else goal
-                path_costs[start, goal] = np.float32(cost)
+                    
+                while prev != start:
+                    curr = prev
+                    prev = predecessors[start, curr]
+                    
+                next_hop[start, goal] = curr
 
         return cls(
             width=width,
@@ -96,48 +116,3 @@ class NavigationGraph:
             return np.empty(0, dtype=np.int32)
         _, indices = self.tree.query(points, workers=1)
         return np.asarray(indices, dtype=np.int32)
-
-
-def _a_star(
-    *,
-    start: int,
-    goal: int,
-    node_positions: np.ndarray,
-    neighbor_indices: np.ndarray,
-    edge_costs: np.ndarray,
-) -> tuple[list[int], float]:
-    frontier: list[tuple[float, int]] = []
-    heappush(frontier, (0.0, start))
-
-    came_from: dict[int, int] = {}
-    g_score = {start: 0.0}
-
-    while frontier:
-        _, current = heappop(frontier)
-        if current == goal:
-            break
-
-        for slot in range(neighbor_indices.shape[1]):
-            neighbor = int(neighbor_indices[current, slot])
-            if neighbor < 0:
-                continue
-            tentative = g_score[current] + float(edge_costs[current, slot])
-            if tentative >= g_score.get(neighbor, float("inf")):
-                continue
-            came_from[neighbor] = current
-            g_score[neighbor] = tentative
-            heuristic = float(
-                np.linalg.norm(node_positions[neighbor] - node_positions[goal])
-            )
-            heappush(frontier, (tentative + heuristic, neighbor))
-
-    if goal not in g_score:
-        return [], float("inf")
-
-    path = [goal]
-    cursor = goal
-    while cursor != start:
-        cursor = came_from[cursor]
-        path.append(cursor)
-    path.reverse()
-    return path, g_score[goal]

@@ -1,16 +1,16 @@
 :root {
-  --bg-1: #050816;
-  --bg-2: #0c1a29;
-  --bg-3: #172f3f;
-  --panel: rgba(7, 14, 26, 0.82);
-  --panel-strong: rgba(10, 21, 38, 0.92);
-  --panel-border: rgba(129, 188, 194, 0.18);
-  --accent: #72e0d1;
-  --accent-strong: #f0b05a;
-  --danger: #ee6d82;
-  --text: #ecf4f4;
-  --muted: #97aebb;
-  --shadow: rgba(0, 0, 0, 0.28);
+  --bg-1: #f4f0ea; /* light beige */
+  --bg-2: #ffedd8;
+  --bg-3: #fcebd2;
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  --panel-border: #000000;
+  --accent: #ff4d00; /* brutalist orange */
+  --accent-strong: #ff0000;
+  --danger: #ff0000;
+  --text: #000000;
+  --muted: #4a4a4a;
+  --shadow: rgba(0, 0, 0, 1);
 }
 
 * {
@@ -26,10 +26,7 @@ body {
 body {
   font-family: "IBM Plex Sans", "Avenir Next", sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(circle at top left, rgba(114, 224, 209, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(240, 176, 90, 0.12), transparent 25%),
-    linear-gradient(180deg, var(--bg-2), var(--bg-1) 72%);
+  background: var(--bg-1);
 }
 
 button,
@@ -52,10 +49,10 @@ input {
 .metric-card,
 .log-entry {
   background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 24px;
-  box-shadow: 0 26px 80px var(--shadow);
-  backdrop-filter: blur(18px);
+  border: 4px solid var(--panel-border);
+  border-radius: 0px;
+  box-shadow: 8px 8px 0px var(--shadow);
+  backdrop-filter: none;
 }
 
 .hero-panel {
@@ -64,35 +61,29 @@ input {
   overflow: hidden;
 }
 
-.hero-panel::after {
-  content: "";
-  position: absolute;
-  inset: auto -80px -120px auto;
-  width: 280px;
-  height: 280px;
-  background: radial-gradient(circle, rgba(114, 224, 209, 0.26), transparent 70%);
-}
-
 .eyebrow {
   margin: 0 0 10px;
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.16em;
   font-size: 0.78rem;
+  font-weight: 800;
 }
 
 h1,
 h2,
 h3 {
   margin: 0;
-  font-family: "Iowan Old Style", "Palatino Linotype", serif;
-  letter-spacing: 0.02em;
+  font-family: "IBM Plex Sans", sans-serif;
+  letter-spacing: -0.02em;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 h1 {
   font-size: clamp(2.3rem, 4vw, 4.1rem);
   line-height: 0.94;
-  max-width: 12ch;
+  max-width: 15ch;
 }
 
 h2 {
@@ -101,9 +92,10 @@ h2 {
 
 h3 {
   font-size: 0.9rem;
-  color: var(--muted);
-  text-transform: uppercase;
+  color: var(--text);
   letter-spacing: 0.12em;
+  border-bottom: 3px solid #000;
+  padding-bottom: 4px;
 }
 
 .lede,
@@ -112,13 +104,15 @@ h3 {
 .log-meta,
 .timeline-caption,
 .scenario-description {
-  color: var(--muted);
+  color: var(--text);
+  font-weight: 500;
 }
 
 .lede {
   margin-top: 14px;
   max-width: 66ch;
   line-height: 1.55;
+  font-size: 1.1rem;
 }
 
 .layout-grid {
@@ -156,67 +150,59 @@ h3 {
 }
 
 .button {
-  border: 0;
-  border-radius: 999px;
-  padding: 11px 15px;
-  background: linear-gradient(135deg, var(--accent), #9ae8e0);
-  color: #07101b;
-  font-weight: 700;
+  border: 3px solid #000;
+  border-radius: 0;
+  padding: 11px 18px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  text-transform: uppercase;
   cursor: pointer;
   transition: transform 140ms ease, box-shadow 140ms ease;
-  box-shadow: 0 14px 34px rgba(114, 224, 209, 0.2);
+  box-shadow: 4px 4px 0px #000;
 }
 
 .button:hover {
-  transform: translateY(-1px);
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #000;
 }
 
 .button.secondary {
-  background: linear-gradient(135deg, var(--accent-strong), #f8d59b);
-  box-shadow: 0 14px 34px rgba(240, 176, 90, 0.18);
+  background: var(--text);
+  color: #fff;
 }
 
 .button.ghost {
-  background: rgba(151, 174, 187, 0.12);
+  background: #fff;
   color: var(--text);
-  box-shadow: none;
 }
 
 .select {
-  border: 1px solid rgba(151, 174, 187, 0.22);
-  border-radius: 999px;
+  border: 3px solid var(--panel-border);
+  border-radius: 0;
   padding: 11px 15px;
-  background: rgba(6, 14, 25, 0.82);
+  background: #fff;
   color: var(--text);
+  font-weight: 700;
+  box-shadow: 4px 4px 0px #000;
 }
 
 .canvas-frame {
   position: relative;
   min-height: 520px;
-  border-radius: 22px;
+  border-radius: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at center, rgba(114, 224, 209, 0.1), transparent 36%),
-    linear-gradient(180deg, rgba(7, 16, 27, 0.96), rgba(4, 8, 16, 0.98));
-  border: 1px solid rgba(129, 188, 194, 0.16);
-}
-
-.canvas-frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(129, 188, 194, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(129, 188, 194, 0.05) 1px, transparent 1px);
-  background-size: 48px 48px;
-  pointer-events: none;
+  background: #fff;
+  border: 4px solid var(--panel-border);
+  box-shadow: inset 4px 4px 0px rgba(0,0,0,0.1);
 }
 
 .timeline-panel {
   padding: 14px 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(151, 174, 187, 0.14);
-  background: rgba(6, 14, 25, 0.72);
+  border-radius: 0;
+  border: 3px solid var(--panel-border);
+  background: #fff;
+  box-shadow: 4px 4px 0px #000;
 }
 
 .timeline-row {
@@ -234,6 +220,7 @@ h3 {
   justify-content: space-between;
   gap: 12px;
   font-size: 0.92rem;
+  font-weight: 800;
 }
 
 .sidebar {
@@ -254,18 +241,22 @@ h3 {
 
 .metric-card {
   padding: 14px;
-  background: var(--panel-strong);
+  background: #f4f0ea;
+  border: 3px solid #000;
+  box-shadow: 4px 4px 0px #000;
 }
 
 .metric-label {
-  color: var(--muted);
+  color: var(--text);
   font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
   margin-bottom: 6px;
 }
 
 .metric-value {
-  font-size: 1.45rem;
-  font-weight: 700;
+  font-size: 1.65rem;
+  font-weight: 900;
 }
 
 .metric-subtitle {
@@ -280,15 +271,17 @@ h3 {
 }
 
 .run-card {
-  border-radius: 18px;
-  border: 1px solid rgba(151, 174, 187, 0.12);
+  border-radius: 0;
+  border: 3px solid #000;
   padding: 12px 14px;
-  background: rgba(6, 14, 25, 0.66);
+  background: #f4f0ea;
+  box-shadow: 4px 4px 0px #000;
 }
 
 .run-card strong {
   display: block;
   font-size: 1rem;
+  font-weight: 800;
 }
 
 .log-list {
@@ -299,7 +292,9 @@ h3 {
 
 .log-entry {
   padding: 12px 14px;
-  background: rgba(6, 14, 25, 0.74);
+  background: #f4f0ea;
+  border: 3px solid #000;
+  font-weight: 600;
 }
 
 .status-pill {
@@ -307,22 +302,26 @@ h3 {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(114, 224, 209, 0.12);
+  border-radius: 0;
+  border: 3px solid #000;
+  background: #fff;
   color: var(--text);
+  font-weight: 800;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0px #000;
 }
 
 .status-pill::before {
   content: "";
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
+  width: 12px;
+  height: 12px;
   background: var(--accent);
-  box-shadow: 0 0 18px rgba(114, 224, 209, 0.8);
+  border: 2px solid #000;
 }
 
 .danger {
   color: var(--danger);
+  font-weight: 800;
 }
 
 .empty-state {
@@ -331,10 +330,12 @@ h3 {
   min-height: 320px;
   padding: 28px;
   text-align: center;
+  font-weight: 700;
 }
 
 a {
   color: var(--accent);
+  font-weight: 800;
 }
 
 @media (max-width: 1080px) {
@@ -356,11 +357,9 @@ a {
   .scene-panel,
   .stack-card {
     padding: 16px;
-    border-radius: 20px;
   }
 
   .metric-grid {
     grid-template-columns: 1fr;
   }
 }
-
