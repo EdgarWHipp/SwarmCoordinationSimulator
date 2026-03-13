@@ -6,16 +6,14 @@
     <title>Swarm Coordination Simulator</title>
     <style>
       :root {
-        --bg-top: #091321;
-        --bg-bottom: #030710;
-        --panel: rgba(8, 18, 34, 0.82);
-        --panel-border: rgba(120, 173, 196, 0.2);
-        --grid: rgba(102, 154, 177, 0.08);
-        --accent: #4fc3c8;
-        --accent-strong: #f6b45e;
-        --text-main: #e6eef4;
-        --text-muted: #9fb6c7;
-        --danger: #f16b7b;
+        --paper: #f2eee6;
+        --paper-strong: #fbf8f1;
+        --ink: #0d0d0d;
+        --ink-muted: #5d5d5d;
+        --grid: rgba(13, 13, 13, 0.08);
+        --accent: #ff5a1f;
+        --accent-soft: rgba(255, 90, 31, 0.16);
+        --danger: #b42318;
       }
 
       * {
@@ -25,29 +23,27 @@
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: "IBM Plex Sans", "Avenir Next", sans-serif;
-        color: var(--text-main);
-        background:
-          radial-gradient(circle at top left, rgba(79, 195, 200, 0.18), transparent 35%),
-          radial-gradient(circle at top right, rgba(246, 180, 94, 0.16), transparent 30%),
-          linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+        font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+        color: var(--ink);
+        background: var(--paper);
       }
 
       .app-shell {
-        width: min(1380px, calc(100vw - 32px));
-        margin: 24px auto;
+        width: min(1460px, calc(100vw - 32px));
+        margin: 20px auto 24px;
         display: grid;
         grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.8fr);
-        gap: 18px;
+        gap: 14px;
+        align-items: start;
       }
 
       .viewport,
       .panel {
         position: relative;
-        background: var(--panel);
-        border: 1px solid var(--panel-border);
-        border-radius: 22px;
-        backdrop-filter: blur(12px);
+        background: var(--paper-strong);
+        border: 3px solid var(--ink);
+        border-radius: 0;
+        box-shadow: 10px 10px 0 var(--ink);
         overflow: hidden;
       }
 
@@ -58,7 +54,7 @@
         background-image:
           linear-gradient(var(--grid) 1px, transparent 1px),
           linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-        background-size: 48px 48px;
+        background-size: 64px 64px;
         pointer-events: none;
       }
 
@@ -66,33 +62,37 @@
         display: block;
         width: 100%;
         height: auto;
+        background: var(--paper-strong);
       }
 
       .panel {
-        padding: 20px;
+        padding: 18px;
       }
 
       h1,
       h2 {
         margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", serif;
-        letter-spacing: 0.02em;
+        font-family: inherit;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
       }
 
       h1 {
-        font-size: 1.8rem;
+        font-size: 1.65rem;
+        line-height: 1.04;
+        max-width: 13ch;
       }
 
       h2 {
-        font-size: 0.92rem;
-        color: var(--text-muted);
-        text-transform: uppercase;
+        font-size: 0.78rem;
+        color: var(--accent);
       }
 
       p {
         margin: 0;
-        color: var(--text-muted);
+        color: var(--ink-muted);
         line-height: 1.5;
+        max-width: 48ch;
       }
 
       .header {
@@ -109,31 +109,32 @@
       }
 
       button {
-        border: 0;
-        border-radius: 999px;
-        padding: 10px 16px;
+        border: 3px solid var(--ink);
+        border-radius: 0;
+        padding: 10px 14px;
         font: inherit;
         font-weight: 600;
-        color: #081420;
-        background: linear-gradient(135deg, var(--accent), #8ae0d8);
+        color: var(--ink);
+        background: var(--paper-strong);
         cursor: pointer;
-        transition: transform 120ms ease, box-shadow 120ms ease;
-        box-shadow: 0 10px 24px rgba(79, 195, 200, 0.18);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+        box-shadow: 4px 4px 0 var(--ink);
       }
 
       button.secondary {
-        background: linear-gradient(135deg, var(--accent-strong), #f6d28f);
-        box-shadow: 0 10px 24px rgba(246, 180, 94, 0.18);
+        color: #fff;
+        background: var(--accent);
       }
 
       button.ghost {
-        color: var(--text-main);
-        background: rgba(159, 182, 199, 0.12);
-        box-shadow: none;
+        background: transparent;
       }
 
       button:hover {
-        transform: translateY(-1px);
+        transform: translate(2px, 2px);
+        box-shadow: 2px 2px 0 var(--ink);
       }
 
       .stats {
@@ -143,20 +144,23 @@
       }
 
       .stat {
-        padding: 14px 16px;
-        border: 1px solid rgba(159, 182, 199, 0.12);
-        border-radius: 16px;
-        background: rgba(6, 12, 24, 0.62);
+        padding: 14px;
+        border: 2px solid var(--ink);
+        border-radius: 0;
+        background: #fff;
+        box-shadow: 4px 4px 0 rgba(13, 13, 13, 0.12);
       }
 
       .label {
-        color: var(--text-muted);
-        font-size: 0.82rem;
+        color: var(--ink-muted);
+        font-size: 0.72rem;
         margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
       }
 
       .value {
-        font-size: 1.36rem;
+        font-size: 1.28rem;
         font-weight: 700;
       }
 
@@ -168,19 +172,26 @@
 
       .event {
         padding: 12px 14px;
-        border-radius: 14px;
-        background: rgba(6, 12, 24, 0.56);
-        border: 1px solid rgba(159, 182, 199, 0.12);
-        color: var(--text-muted);
+        border-radius: 0;
+        background: #fff;
+        border: 2px solid var(--ink);
+        border-left: 8px solid var(--accent);
+        color: var(--ink-muted);
       }
 
       .status {
         margin-top: 14px;
-        color: var(--text-muted);
+        color: var(--ink-muted);
+        line-height: 1.7;
       }
 
       .status strong {
-        color: var(--text-main);
+        color: var(--ink);
+      }
+
+      .status a {
+        color: var(--accent);
+        text-decoration-thickness: 2px;
       }
 
       @media (max-width: 980px) {
@@ -234,8 +245,13 @@
       const eventLog = document.getElementById("event-log");
       const socketStatus = document.getElementById("socket-status");
 
-      let currentState = null;
       let socket = null;
+      let targetState = null;
+      let sceneState = null;
+      let lastFrameTime = 0;
+
+      const droneSprites = new Map();
+      const waypointSprites = new Map();
 
       const statsOrder = [
         ["active_agents", "Active Drones"],
@@ -248,17 +264,70 @@
         ["assignment_changes", "Assignment Changes"],
       ];
 
+      ctx.imageSmoothingEnabled = true;
+
+      function cloneDrone(drone) {
+        return {
+          ...drone,
+          position: { ...drone.position },
+          velocity: { ...drone.velocity },
+        };
+      }
+
+      function cloneWaypoint(waypoint) {
+        return {
+          ...waypoint,
+          position: { ...waypoint.position },
+        };
+      }
+
+      function syncCanvasSize(state) {
+        if (canvas.width !== state.config.width || canvas.height !== state.config.height) {
+          canvas.width = state.config.width;
+          canvas.height = state.config.height;
+          ctx.imageSmoothingEnabled = true;
+        }
+        canvas.style.aspectRatio = `${state.config.width} / ${state.config.height}`;
+      }
+
+      function queueState(state) {
+        syncCanvasSize(state);
+        targetState = {
+          ...state,
+          drones: state.drones.map(cloneDrone),
+          waypoints: state.waypoints.map(cloneWaypoint),
+          events: [...state.events],
+        };
+
+        if (!sceneState) {
+          droneSprites.clear();
+          waypointSprites.clear();
+          targetState.drones.forEach((drone) => droneSprites.set(drone.drone_id, cloneDrone(drone)));
+          targetState.waypoints.forEach((waypoint) =>
+            waypointSprites.set(waypoint.waypoint_id, cloneWaypoint(waypoint))
+          );
+          sceneState = {
+            ...targetState,
+            drones: Array.from(droneSprites.values()),
+            waypoints: Array.from(waypointSprites.values()),
+          };
+        }
+
+        renderStats(state.summary);
+        renderEvents(state.events);
+      }
+
       function drawGridOverlay() {
         ctx.save();
-        ctx.strokeStyle = "rgba(102, 154, 177, 0.08)";
+        ctx.strokeStyle = "rgba(13, 13, 13, 0.08)";
         ctx.lineWidth = 1;
-        for (let x = 0; x < canvas.width; x += 48) {
+        for (let x = 0; x < canvas.width; x += 64) {
           ctx.beginPath();
           ctx.moveTo(x, 0);
           ctx.lineTo(x, canvas.height);
           ctx.stroke();
         }
-        for (let y = 0; y < canvas.height; y += 48) {
+        for (let y = 0; y < canvas.height; y += 64) {
           ctx.beginPath();
           ctx.moveTo(0, y);
           ctx.lineTo(canvas.width, y);
@@ -267,45 +336,49 @@
         ctx.restore();
       }
 
+      function drawBackdrop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fbf8f1";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(255, 90, 31, 0.08)";
+        ctx.fillRect(24, 24, Math.max(120, canvas.width * 0.18), 20);
+        drawGridOverlay();
+        ctx.strokeStyle = "#0d0d0d";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+      }
+
       function drawWaypoint(waypoint) {
         const { x, y } = waypoint.position;
+        const size = waypoint.claimed_by ? 22 : 16;
         ctx.save();
-        ctx.strokeStyle = waypoint.claimed_by ? "#f6b45e" : "rgba(246, 180, 94, 0.5)";
-        ctx.fillStyle = "rgba(246, 180, 94, 0.12)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(x, y, 14, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(x, y, 24, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(246, 180, 94, 0.18)";
-        ctx.stroke();
-        ctx.fillStyle = "#f6d28f";
-        ctx.font = "12px IBM Plex Sans, sans-serif";
-        ctx.fillText(waypoint.waypoint_id, x + 18, y - 16);
+        ctx.translate(x, y);
+        ctx.fillStyle = waypoint.claimed_by ? "rgba(255, 90, 31, 0.08)" : "rgba(13, 13, 13, 0.03)";
+        ctx.strokeStyle = waypoint.claimed_by ? "#ff5a1f" : "rgba(13, 13, 13, 0.52)";
+        ctx.lineWidth = 2.5;
+        ctx.fillRect(-size / 2, -size / 2, size, size);
+        ctx.strokeRect(-size / 2, -size / 2, size, size);
+        ctx.fillStyle = waypoint.claimed_by ? "#ff5a1f" : "#0d0d0d";
+        ctx.fillRect(-3, -3, 6, 6);
         ctx.restore();
       }
 
       function drawDrone(drone) {
         const { x, y } = drone.position;
         const angle = Math.atan2(drone.velocity.y, drone.velocity.x);
-        const bodyColor = drone.failed ? "#f16b7b" : "#4fc3c8";
+        const speed = Math.hypot(drone.velocity.x, drone.velocity.y);
+        const length = drone.failed ? 18 : 20 + Math.min(speed * 0.12, 7);
         ctx.save();
         ctx.translate(x, y);
-        ctx.rotate(angle || 0);
-        ctx.fillStyle = bodyColor;
-        ctx.beginPath();
-        ctx.moveTo(12, 0);
-        ctx.lineTo(-10, 7);
-        ctx.lineTo(-7, 0);
-        ctx.lineTo(-10, -7);
-        ctx.closePath();
-        ctx.fill();
+        ctx.rotate(Number.isFinite(angle) ? angle : 0);
+        ctx.fillStyle = drone.failed ? "rgba(13, 13, 13, 0.18)" : "#0d0d0d";
+        ctx.fillRect(-length * 0.5, -6, length, 12);
+        ctx.fillStyle = drone.failed ? "#b42318" : "#ff5a1f";
+        ctx.fillRect(length * 0.15, -6, Math.max(6, length * 0.35), 12);
 
         if (drone.failed) {
-          ctx.strokeStyle = "rgba(241, 107, 123, 0.9)";
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = "#b42318";
+          ctx.lineWidth = 2.5;
           ctx.beginPath();
           ctx.moveTo(-8, -8);
           ctx.lineTo(8, 8);
@@ -314,27 +387,20 @@
           ctx.stroke();
         }
         ctx.restore();
-
-        ctx.save();
-        ctx.fillStyle = "rgba(230, 238, 244, 0.85)";
-        ctx.font = "11px IBM Plex Sans, sans-serif";
-        ctx.fillText(drone.drone_id, x + 14, y + 4);
-        if (drone.target_waypoint_id) {
-          ctx.fillStyle = "rgba(79, 195, 200, 0.85)";
-          ctx.fillText(`-> ${drone.target_waypoint_id}`, x + 14, y + 18);
-        }
-        ctx.restore();
       }
 
       function drawAssignments(state) {
+        const waypointsById = new Map(state.waypoints.map((waypoint) => [waypoint.waypoint_id, waypoint]));
         ctx.save();
-        ctx.strokeStyle = "rgba(79, 195, 200, 0.16)";
-        ctx.setLineDash([6, 8]);
+        ctx.strokeStyle = "rgba(13, 13, 13, 0.26)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([12, 8]);
+
         for (const drone of state.drones) {
           if (!drone.target_waypoint_id || drone.failed) {
             continue;
           }
-          const waypoint = state.waypoints.find((item) => item.waypoint_id === drone.target_waypoint_id);
+          const waypoint = waypointsById.get(drone.target_waypoint_id);
           if (!waypoint) {
             continue;
           }
@@ -346,23 +412,57 @@
         ctx.restore();
       }
 
+      function snapOrBlendPosition(sprite, target, alpha, snapDistance) {
+        const dx = target.position.x - sprite.position.x;
+        const dy = target.position.y - sprite.position.y;
+        if ((dx * dx) + (dy * dy) > snapDistance * snapDistance) {
+          sprite.position.x = target.position.x;
+          sprite.position.y = target.position.y;
+          return;
+        }
+        sprite.position.x += dx * alpha;
+        sprite.position.y += dy * alpha;
+      }
+
+      function advanceSceneState(deltaMs) {
+        if (!targetState) {
+          return null;
+        }
+
+        const droneAlpha = 1 - Math.exp(-Math.min(deltaMs, 48) / 70);
+        const waypointAlpha = 1 - Math.exp(-Math.min(deltaMs, 48) / 90);
+
+        const nextDrones = targetState.drones.map((drone) => {
+          const sprite = droneSprites.get(drone.drone_id) ?? cloneDrone(drone);
+          snapOrBlendPosition(sprite, drone, droneAlpha, 180);
+          sprite.velocity.x += (drone.velocity.x - sprite.velocity.x) * droneAlpha;
+          sprite.velocity.y += (drone.velocity.y - sprite.velocity.y) * droneAlpha;
+          sprite.failed = drone.failed;
+          sprite.target_waypoint_id = drone.target_waypoint_id;
+          droneSprites.set(drone.drone_id, sprite);
+          return sprite;
+        });
+
+        const nextWaypoints = targetState.waypoints.map((waypoint) => {
+          const sprite = waypointSprites.get(waypoint.waypoint_id) ?? cloneWaypoint(waypoint);
+          snapOrBlendPosition(sprite, waypoint, waypointAlpha, 260);
+          sprite.claimed_by = waypoint.claimed_by;
+          sprite.completions = waypoint.completions;
+          sprite.priority = waypoint.priority;
+          waypointSprites.set(waypoint.waypoint_id, sprite);
+          return sprite;
+        });
+
+        sceneState = {
+          ...targetState,
+          drones: nextDrones,
+          waypoints: nextWaypoints,
+        };
+        return sceneState;
+      }
+
       function drawState(state) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawGridOverlay();
-
-        const gradient = ctx.createRadialGradient(
-          canvas.width * 0.5,
-          canvas.height * 0.5,
-          10,
-          canvas.width * 0.5,
-          canvas.height * 0.5,
-          canvas.width * 0.65
-        );
-        gradient.addColorStop(0, "rgba(79, 195, 200, 0.05)");
-        gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+        drawBackdrop();
         drawAssignments(state);
         state.waypoints.forEach(drawWaypoint);
         state.drones.forEach(drawDrone);
@@ -391,13 +491,6 @@
         });
       }
 
-      function renderState(state) {
-        currentState = state;
-        drawState(state);
-        renderStats(state.summary);
-        renderEvents(state.events);
-      }
-
       async function postAction(path) {
         await fetch(path, { method: "POST" });
       }
@@ -405,9 +498,7 @@
       async function loadInitialState() {
         const response = await fetch("/api/state");
         const state = await response.json();
-        canvas.width = state.config.width;
-        canvas.height = state.config.height;
-        renderState(state);
+        queueState(state);
       }
 
       function connectSocket() {
@@ -420,7 +511,7 @@
         };
 
         socket.onmessage = (event) => {
-          renderState(JSON.parse(event.data));
+          queueState(JSON.parse(event.data));
         };
 
         socket.onclose = () => {
@@ -429,13 +520,29 @@
         };
       }
 
+      function animate(frameTime) {
+        if (!lastFrameTime) {
+          lastFrameTime = frameTime;
+        }
+        const deltaMs = frameTime - lastFrameTime;
+        lastFrameTime = frameTime;
+
+        const nextState = advanceSceneState(deltaMs);
+        if (nextState) {
+          drawState(nextState);
+        }
+        requestAnimationFrame(animate);
+      }
+
       document.getElementById("pause-button").addEventListener("click", () => postAction("/api/pause"));
       document.getElementById("resume-button").addEventListener("click", () => postAction("/api/resume"));
       document.getElementById("reset-button").addEventListener("click", () => postAction("/api/reset"));
       document.getElementById("failure-button").addEventListener("click", () => postAction("/api/fail-random"));
 
-      loadInitialState().then(connectSocket);
+      loadInitialState().then(() => {
+        requestAnimationFrame(animate);
+        connectSocket();
+      });
     </script>
   </body>
 </html>
-
