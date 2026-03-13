@@ -70,6 +70,7 @@ def _worker_main(
                         "config": simulator.update_config(
                             tick_seconds=command.get("tick_seconds"),
                             render_stride=command.get("render_stride"),
+                            assignment_strategy=command.get("assignment_strategy"),
                         ),
                         "snapshot": simulator.snapshot(),
                     }
@@ -81,6 +82,17 @@ def _worker_main(
                         "failed_drone_id": failed_drone_id,
                         "snapshot": simulator.snapshot(),
                     }
+                elif name == "advance":
+                    step_count = max(1, int(command.get("steps", 1)))
+                    latest_snapshot = simulator.snapshot()
+                    for _ in range(step_count):
+                        latest_snapshot = simulator.step()
+                    payload = {
+                        "advanced_steps": step_count,
+                        "snapshot": latest_snapshot,
+                    }
+                    if running:
+                        next_tick_at = time.perf_counter() + simulator.config.tick_seconds
                 else:
                     payload = {"error": f"Unsupported command {name!r}"}
 
@@ -225,11 +237,13 @@ class SimulationRuntime:
         *,
         tick_seconds: float | None = None,
         render_stride: int | None = None,
+        assignment_strategy: str | None = None,
     ) -> dict[str, Any]:
         response = await self.request(
             "configure",
             tick_seconds=tick_seconds,
             render_stride=render_stride,
+            assignment_strategy=assignment_strategy,
         )
         if isinstance(response, dict) and "config" in response and isinstance(response["config"], dict):
             self.config = SwarmConfig(**response["config"])
@@ -244,6 +258,9 @@ class SimulationRuntime:
 
     async def inject_random_failure(self) -> dict[str, Any]:
         return await self.request("fail-random")
+
+    async def advance(self, steps: int) -> dict[str, Any]:
+        return await self.request("advance", steps=max(1, int(steps)))
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()

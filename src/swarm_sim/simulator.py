@@ -10,6 +10,7 @@ from scipy.spatial import cKDTree
 
 from swarm_sim.navigation import NavigationGraph
 from swarm_sim.raft import RaftCoordinator
+from swarm_sim.swarmraft import SwarmRaftConfig, SwarmRaftLocalizer
 
 if TYPE_CHECKING:
     from swarm_sim.taichi_backend import TaichiBoidsBackend
@@ -42,6 +43,7 @@ except ModuleNotFoundError:
 
 
 EPSILON = np.float32(1e-5)
+SUPPORTED_ASSIGNMENT_STRATEGIES = ("raft", "swarmraft", "consensus", "greedy")
 
 
 @dataclass(slots=True)
@@ -74,6 +76,11 @@ class SwarmConfig:
     raft_heartbeat_ticks: int = 1
     raft_election_timeout_min_ticks: int = 4
     raft_election_timeout_max_ticks: int = 8
+    swarmraft_gnss_noise_std: float = 6.0
+    swarmraft_ins_drift_std: float = 1.4
+    swarmraft_range_noise_std: float = 4.0
+    swarmraft_residual_threshold: float = 18.0
+    swarmraft_min_peer_votes: int = 2
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -105,6 +112,11 @@ class SwarmConfig:
             "raft_heartbeat_ticks": self.raft_heartbeat_ticks,
             "raft_election_timeout_min_ticks": self.raft_election_timeout_min_ticks,
             "raft_election_timeout_max_ticks": self.raft_election_timeout_max_ticks,
+            "swarmraft_gnss_noise_std": self.swarmraft_gnss_noise_std,
+            "swarmraft_ins_drift_std": self.swarmraft_ins_drift_std,
+            "swarmraft_range_noise_std": self.swarmraft_range_noise_std,
+            "swarmraft_residual_threshold": self.swarmraft_residual_threshold,
+            "swarmraft_min_peer_votes": self.swarmraft_min_peer_votes,
         }
 
 
@@ -442,9 +454,16 @@ class SwarmSimulator:
         registry: CollectorRegistry | None = None,
     ) -> None:
         self.config = config or SwarmConfig()
+        self.base_seed = seed
         self.seed = seed
+        self.reset_index = -1
         self.rng = np.random.default_rng(seed)
         self.metrics = SwarmMetrics(registry=registry)
+        if self.config.assignment_strategy not in SUPPORTED_ASSIGNMENT_STRATEGIES:
+            raise ValueError(
+                f"assignment_strategy must be one of {SUPPORTED_ASSIGNMENT_STRATEGIES}, "
+                f"got {self.config.assignment_strategy!r}."
+            )
         self.navigation = NavigationGraph.build(
             width=self.config.width,
             height=self.config.height,
@@ -457,6 +476,19 @@ class SwarmSimulator:
             heartbeat_ticks=self.config.raft_heartbeat_ticks,
             election_timeout_min_ticks=self.config.raft_election_timeout_min_ticks,
             election_timeout_max_ticks=self.config.raft_election_timeout_max_ticks,
+        )
+        self.swarmraft = SwarmRaftLocalizer(
+            drone_count=self.config.drone_count,
+            rng=self.rng,
+            config=SwarmRaftConfig(
+                width=float(self.config.width),
+                height=float(self.config.height),
+                gnss_noise_std=float(self.config.swarmraft_gnss_noise_std),
+                ins_drift_std=float(self.config.swarmraft_ins_drift_std),
+                range_noise_std=float(self.config.swarmraft_range_noise_std),
+                residual_threshold=float(self.config.swarmraft_residual_threshold),
+                min_peer_votes=int(self.config.swarmraft_min_peer_votes),
+            ),
         )
         self.taichi_backend: TaichiBoidsBackend | None = None
         if self.config.physics_backend == "taichi":
@@ -500,9 +532,14 @@ class SwarmSimulator:
 
     def reset(self, seed: int | None = None) -> dict[str, Any]:
         if seed is not None:
-            self.seed = seed
-        self.rng = np.random.default_rng(self.seed)
+            self.base_seed = seed
+            self.reset_index = -1
+        self.reset_index += 1
+        effective_seed = self._effective_reset_seed()
+        self.seed = effective_seed
+        self.rng = np.random.default_rng(effective_seed)
         self.raft.rng = self.rng
+        self.swarmraft.rng = self.rng
 
         self.tick = 0
         self.elapsed_seconds = 0.0
@@ -531,11 +568,22 @@ class SwarmSimulator:
         self.waypoint_completions_by_id.fill(0)
         self._refresh_waypoint_nav_nodes()
         self.raft.reset(current_tick=self.tick)
+        self.swarmraft.reset(self.positions)
 
         self.events.append("Simulation reset with vectorized SoA state.")
         snapshot = self.snapshot()
         self.metrics.observe_summary(snapshot["summary"])
         return snapshot
+
+    def _effective_reset_seed(self) -> int:
+        if self.reset_index <= 0:
+            return int(self.base_seed)
+        return int(
+            np.random.SeedSequence([int(self.base_seed), int(self.reset_index)]).generate_state(
+                1,
+                dtype=np.uint32,
+            )[0]
+        )
 
     def snapshot(self) -> dict[str, Any]:
         summary = self._build_summary()
@@ -544,6 +592,7 @@ class SwarmSimulator:
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "config": self.config.as_dict(),
             "raft": self.raft.status(self.failed, self.agent_ids),
+            "swarmraft": self._serialize_swarmraft(),
             "drones": self._serialize_drones(),
             "waypoints": self._serialize_waypoints(),
             "events": list(self.events),
@@ -557,7 +606,7 @@ class SwarmSimulator:
         if self.config.failure_tick is not None and self.tick == self.config.failure_tick:
             self.inject_random_failure()
 
-        if self.config.assignment_strategy == "raft":
+        if self.config.assignment_strategy in {"raft", "swarmraft"}:
             for event in self.raft.tick(current_tick=self.tick, failed=self.failed):
                 self.events.append(event.replace("node ", "drone-"))
 
@@ -571,6 +620,8 @@ class SwarmSimulator:
         self._refresh_routes()
         new_collisions = self._update_motion()
         completions = self._complete_waypoints()
+        if self.config.assignment_strategy == "swarmraft":
+            self._update_swarmraft_state()
 
         snapshot = self.snapshot()
         self.metrics.record_collisions(new_collisions)
@@ -614,6 +665,7 @@ class SwarmSimulator:
         *,
         tick_seconds: float | None = None,
         render_stride: int | None = None,
+        assignment_strategy: str | None = None,
     ) -> dict[str, Any]:
         changed: list[str] = []
         if tick_seconds is not None:
@@ -626,6 +678,15 @@ class SwarmSimulator:
                 raise ValueError("render_stride must be at least 1.")
             self.config.render_stride = int(render_stride)
             changed.append(f"render_stride={self.config.render_stride}")
+        if assignment_strategy is not None:
+            if assignment_strategy not in SUPPORTED_ASSIGNMENT_STRATEGIES:
+                raise ValueError(
+                    f"assignment_strategy must be one of {SUPPORTED_ASSIGNMENT_STRATEGIES}."
+                )
+            self.config.assignment_strategy = assignment_strategy
+            changed.append(f"assignment_strategy={self.config.assignment_strategy}")
+            if assignment_strategy == "swarmraft":
+                self.swarmraft.reset(self.positions)
         if changed:
             self.events.append(f"Runtime config updated: {', '.join(changed)}.")
         return self.config.as_dict()
@@ -681,19 +742,21 @@ class SwarmSimulator:
         self.pending_failure_waypoints.clear()
 
     def _spawn_drones(self) -> None:
-        angles = np.linspace(
-            0.0,
-            np.float32(2.0 * np.pi),
-            self.config.drone_count,
-            endpoint=False,
-            dtype=np.float32,
+        center = self.rng.uniform(
+            low=np.array([self.config.width * 0.28, self.config.height * 0.28], dtype=np.float32),
+            high=np.array([self.config.width * 0.72, self.config.height * 0.72], dtype=np.float32),
+        ).astype(np.float32)
+        angles = np.sort(
+            self.rng.uniform(
+                0.0,
+                float(2.0 * np.pi),
+                size=self.config.drone_count,
+            ).astype(np.float32)
         )
+        rotation_offset = np.float32(self.rng.uniform(0.0, float(2.0 * np.pi)))
+        angles = (angles + rotation_offset).astype(np.float32)
         radii = self.rng.uniform(95.0, 145.0, size=self.config.drone_count).astype(np.float32)
         jitter = self.rng.uniform(-14.0, 14.0, size=(self.config.drone_count, 2)).astype(np.float32)
-        center = np.array(
-            [self.config.width / 2.0, self.config.height / 2.0],
-            dtype=np.float32,
-        )
 
         orbit = np.stack((np.cos(angles), np.sin(angles)), axis=1).astype(np.float32)
         tangential = np.stack((-np.sin(angles), np.cos(angles)), axis=1).astype(np.float32)
@@ -710,37 +773,10 @@ class SwarmSimulator:
         self.positions[:, 1] = np.clip(self.positions[:, 1], 20.0, self.config.height - 20.0)
 
     def _spawn_waypoints(self) -> None:
-        columns = max(2, int(np.ceil(self.config.waypoint_count / 2)))
-        rows = int(np.ceil(self.config.waypoint_count / columns))
-        x_positions = np.linspace(
-            80.0,
-            self.config.width - 80.0,
-            columns,
-            dtype=np.float32,
-        )
-        y_positions = np.linspace(
-            80.0,
-            self.config.height - 80.0,
-            rows,
-            dtype=np.float32,
-        )
-        grid_x, grid_y = np.meshgrid(x_positions, y_positions)
-        base = np.stack((grid_x.ravel(), grid_y.ravel()), axis=1)[: self.config.waypoint_count]
-        jitter = self.rng.uniform(
-            low=np.array([-120.0, -90.0], dtype=np.float32),
-            high=np.array([120.0, 90.0], dtype=np.float32),
-            size=(self.config.waypoint_count, 2),
-        ).astype(np.float32)
-        self.waypoint_positions = base.astype(np.float32) + jitter
-        self.waypoint_positions[:, 0] = np.clip(
-            self.waypoint_positions[:, 0],
-            20.0,
-            self.config.width - 20.0,
-        )
-        self.waypoint_positions[:, 1] = np.clip(
-            self.waypoint_positions[:, 1],
-            20.0,
-            self.config.height - 20.0,
+        self.waypoint_positions = self._sample_scattered_points(
+            self.config.waypoint_count,
+            margin=80.0,
+            min_distance=96.0,
         )
         self.waypoint_priorities = self.rng.uniform(
             0.8,
@@ -748,11 +784,47 @@ class SwarmSimulator:
             size=self.config.waypoint_count,
         ).astype(np.float32)
 
+    def _sample_scattered_points(
+        self,
+        count: int,
+        *,
+        margin: float,
+        min_distance: float,
+    ) -> np.ndarray:
+        points = np.zeros((count, 2), dtype=np.float32)
+        if count <= 0:
+            return points
+
+        accepted = 0
+        rejection_count = 0
+        spacing = float(min_distance)
+        low = np.array([margin, margin], dtype=np.float32)
+        high = np.array([self.config.width - margin, self.config.height - margin], dtype=np.float32)
+        while accepted < count:
+            candidate = self.rng.uniform(low=low, high=high).astype(np.float32)
+            if accepted == 0:
+                points[accepted] = candidate
+                accepted += 1
+                continue
+
+            distances = np.linalg.norm(points[:accepted] - candidate, axis=1)
+            if np.all(distances >= spacing):
+                points[accepted] = candidate
+                accepted += 1
+                rejection_count = 0
+                continue
+
+            rejection_count += 1
+            if rejection_count >= 128:
+                spacing = max(spacing * 0.9, 28.0)
+                rejection_count = 0
+        return points
+
     def _refresh_waypoint_nav_nodes(self) -> None:
         self.waypoint_nav_nodes = self.navigation.nearest_nodes(self.waypoint_positions)
 
     def _score_matrix(self, active_indices: np.ndarray) -> np.ndarray:
-        active_positions = self.positions[active_indices]
+        active_positions = self._assignment_reference_positions(active_indices)
         offsets = active_positions[:, None, :] - self.waypoint_positions[None, :, :]
         distances = np.linalg.norm(offsets, axis=2).astype(np.float32)
         distance_score = np.float32(2.4) - (
@@ -785,6 +857,11 @@ class SwarmSimulator:
             + current_bonus
             - load_penalty
         ).astype(np.float32)
+
+    def _assignment_reference_positions(self, active_indices: np.ndarray) -> np.ndarray:
+        if self.config.assignment_strategy == "swarmraft":
+            return self.swarmraft.recovered_positions[active_indices]
+        return self.positions[active_indices]
 
     def _apply_assignments(self, assignments_by_agent: np.ndarray) -> tuple[int, int]:
         previous_targets = self.target_waypoints.copy()
@@ -853,7 +930,7 @@ class SwarmSimulator:
             self._apply_assignments(full_assignments)
             committed = int(np.count_nonzero(full_assignments >= 0))
             contention_count = 0
-        elif self.config.assignment_strategy == "raft":
+        elif self.config.assignment_strategy in {"raft", "swarmraft"}:
             proposed_assignments = self._greedy_assignments_for_active(
                 active_indices=active_indices,
                 score_matrix=score_matrix,
@@ -1174,6 +1251,18 @@ class SwarmSimulator:
             else 0.0
         )
         raft_status = self.raft.status(self.failed, self.agent_ids)
+        swarmraft_status = (
+            self.swarmraft.summary(true_positions=self.positions, failed=self.failed)
+            if self.config.assignment_strategy == "swarmraft"
+            else {
+                "enabled": False,
+                "suspected_agents": 0,
+                "recovered_agents": 0,
+                "mean_gnss_error": 0.0,
+                "mean_consensus_error": 0.0,
+                "mean_residual": 0.0,
+            }
+        )
         return {
             "active_agents": active_count,
             "failed_agents": int(np.count_nonzero(self.failed)),
@@ -1193,6 +1282,12 @@ class SwarmSimulator:
             "raft_log_length": raft_status["log_length"],
             "raft_leader_id": raft_status["leader_id"],
             "raft_quorum_available": raft_status["quorum_available"],
+            "swarmraft_enabled": swarmraft_status["enabled"],
+            "swarmraft_suspected_agents": swarmraft_status["suspected_agents"],
+            "swarmraft_recovered_agents": swarmraft_status["recovered_agents"],
+            "swarmraft_mean_gnss_error": swarmraft_status["mean_gnss_error"],
+            "swarmraft_mean_consensus_error": swarmraft_status["mean_consensus_error"],
+            "swarmraft_mean_residual": swarmraft_status["mean_residual"],
             "waypoint_completions": self.waypoint_completions,
             "waypoint_completion_rate_per_min": round(completion_rate, 2),
         }
@@ -1215,6 +1310,7 @@ class SwarmSimulator:
                     else None
                 ),
                 "failed": bool(self.failed[index]),
+                "swarmraft": self._serialize_swarmraft_drone(index),
             }
             for index in range(self.config.drone_count)
         ]
@@ -1237,3 +1333,53 @@ class SwarmSimulator:
             }
             for index in range(self.config.waypoint_count)
         ]
+
+    def _serialize_swarmraft(self) -> dict[str, Any]:
+        if self.config.assignment_strategy != "swarmraft":
+            return {"enabled": False}
+        return {
+            "enabled": True,
+            "leader_id": self.raft.status(self.failed, self.agent_ids)["leader_id"],
+            "residual_threshold": round(float(self.config.swarmraft_residual_threshold), 2),
+            "suspected_agents": [
+                self.agent_ids[index]
+                for index in np.flatnonzero(self.swarmraft.suspected_faulty & (~self.failed))
+            ],
+        }
+
+    def _serialize_swarmraft_drone(self, index: int) -> dict[str, Any] | None:
+        if self.config.assignment_strategy != "swarmraft":
+            return None
+        return {
+            "gnss_position": {
+                "x": round(float(self.swarmraft.gnss_positions[index, 0]), 2),
+                "y": round(float(self.swarmraft.gnss_positions[index, 1]), 2),
+            },
+            "ins_position": {
+                "x": round(float(self.swarmraft.ins_positions[index, 0]), 2),
+                "y": round(float(self.swarmraft.ins_positions[index, 1]), 2),
+            },
+            "fused_position": {
+                "x": round(float(self.swarmraft.fused_positions[index, 0]), 2),
+                "y": round(float(self.swarmraft.fused_positions[index, 1]), 2),
+            },
+            "recovered_position": {
+                "x": round(float(self.swarmraft.recovered_positions[index, 0]), 2),
+                "y": round(float(self.swarmraft.recovered_positions[index, 1]), 2),
+            },
+            "residual": round(float(self.swarmraft.residuals[index]), 2),
+            "negative_votes": int(self.swarmraft.negative_votes[index]),
+            "positive_votes": int(self.swarmraft.positive_votes[index]),
+            "peer_count": int(self.swarmraft.peer_counts[index]),
+            "suspected_faulty": bool(self.swarmraft.suspected_faulty[index]),
+            "recovered": bool(self.swarmraft.recovered_mask[index]),
+        }
+
+    def _update_swarmraft_state(self) -> None:
+        self.swarmraft.update(
+            true_positions=self.positions,
+            velocities=self.velocities,
+            failed=self.failed,
+            communication_radius=float(self.config.communication_radius),
+            tick_seconds=float(self.config.tick_seconds),
+        )

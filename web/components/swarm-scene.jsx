@@ -11,6 +11,8 @@ function worldPosition(width, height, x, y, elevation) {
 
 function DroneMesh({ drone, width, height, tick, index }) {
   const groupRef = useRef();
+  const swarmraft = drone.swarmraft;
+  const suspected = Boolean(swarmraft?.suspected_faulty);
   
   const targetPos = new THREE.Vector3(...worldPosition(
     width, height, drone.position.x, drone.position.y,
@@ -38,15 +40,75 @@ function DroneMesh({ drone, width, height, tick, index }) {
       <mesh>
         <coneGeometry args={[5.4, 16, 4]} />
         <meshStandardMaterial
-          color={drone.failed ? "#333344" : "#6c6fff"}
-          emissive={drone.failed ? "#111122" : "#3c3fcc"}
+          color={drone.failed ? "#333344" : suspected ? "#ff7a59" : "#6c6fff"}
+          emissive={drone.failed ? "#111122" : suspected ? "#9f2d1a" : "#3c3fcc"}
           emissiveIntensity={0.5}
         />
       </mesh>
       <mesh position={[-4, 0, 0]}>
         <boxGeometry args={[3.4, 1.4, 11]} />
-        <meshStandardMaterial color={drone.failed ? "#22223a" : "#c4c5ff"} />
+        <meshStandardMaterial color={drone.failed ? "#22223a" : suspected ? "#ffd0c2" : "#c4c5ff"} />
       </mesh>
+    </group>
+  );
+}
+
+function SwarmRaftOverlay({ drone, width, height }) {
+  if (!drone.swarmraft || drone.failed) return null;
+
+  const gnss = worldPosition(
+    width,
+    height,
+    drone.swarmraft.gnss_position.x,
+    drone.swarmraft.gnss_position.y,
+    1.8
+  );
+  const recovered = worldPosition(
+    width,
+    height,
+    drone.swarmraft.recovered_position.x,
+    drone.swarmraft.recovered_position.y,
+    drone.swarmraft.suspected_faulty ? 7.5 : 5.4
+  );
+  const fused = worldPosition(
+    width,
+    height,
+    drone.swarmraft.fused_position.x,
+    drone.swarmraft.fused_position.y,
+    3.6
+  );
+
+  return (
+    <group>
+      <mesh position={gnss} rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[2.2, 3.6, 20]} />
+        <meshStandardMaterial
+          color="#7dd3fc"
+          emissive="#164e63"
+          emissiveIntensity={0.6}
+          transparent
+          opacity={0.75}
+        />
+      </mesh>
+      <mesh position={fused} rotation={[0, Math.PI / 4, 0]}>
+        <boxGeometry args={[3, 3, 3]} />
+        <meshStandardMaterial color="#f8fafc" emissive="#334155" emissiveIntensity={0.35} />
+      </mesh>
+      <mesh position={recovered} rotation={[0, Math.PI / 4, 0]}>
+        <octahedronGeometry args={[drone.swarmraft.recovered ? 4.8 : 3.8, 0]} />
+        <meshStandardMaterial
+          color={drone.swarmraft.suspected_faulty ? "#ffb454" : "#8ef0a8"}
+          emissive={drone.swarmraft.suspected_faulty ? "#7c2d12" : "#166534"}
+          emissiveIntensity={0.45}
+        />
+      </mesh>
+      <Line
+        color={drone.swarmraft.suspected_faulty ? "#ff7a59" : "#7dd3fc"}
+        lineWidth={1.2}
+        opacity={0.42}
+        points={[gnss, recovered]}
+        transparent
+      />
     </group>
   );
 }
@@ -91,6 +153,7 @@ function WaypointMesh({ waypoint, width, height, tick, index }) {
 function SwarmObjects({ playback, frame }) {
   const width = playback.config.width;
   const height = playback.config.height;
+  const isSwarmRaft = frame?.config?.assignment_strategy === "swarmraft";
 
   return (
     <group>
@@ -116,7 +179,7 @@ function SwarmObjects({ playback, frame }) {
       ))}
 
       {frame.drones.map((drone, index) => (
-        <DroneMesh 
+        <DroneMesh
           key={drone.drone_id} 
           drone={drone} 
           width={width} 
@@ -126,11 +189,26 @@ function SwarmObjects({ playback, frame }) {
         />
       ))}
 
+      {isSwarmRaft
+        ? frame.drones.map((drone) => (
+            <SwarmRaftOverlay
+              key={`${drone.drone_id}-swarmraft`}
+              drone={drone}
+              width={width}
+              height={height}
+            />
+          ))
+        : null}
+
       {frame.drones.map((drone) => {
         if (!drone.target_waypoint_id || drone.failed) return null;
         const waypoint = frame.waypoints.find((c) => c.waypoint_id === drone.target_waypoint_id);
         if (!waypoint) return null;
-        const start = worldPosition(width, height, drone.position.x, drone.position.y, 16);
+        const startSource =
+          isSwarmRaft && drone.swarmraft
+            ? drone.swarmraft.recovered_position
+            : drone.position;
+        const start = worldPosition(width, height, startSource.x, startSource.y, 16);
         const end   = worldPosition(width, height, waypoint.position.x, waypoint.position.y, 4);
         return (
           <Line

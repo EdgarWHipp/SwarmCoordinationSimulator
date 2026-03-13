@@ -5,6 +5,27 @@ import SiteHeader from "./site-header";
 import SwarmScene from "./swarm-scene";
 
 const SWARM_API_BASE_URL = (process.env.NEXT_PUBLIC_SWARM_API_BASE_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+const FAST_FORWARD_STEPS = 300;
+const LIVE_MODE_LABELS = {
+  raft: "Consensus Coordination",
+  swarmraft: "Resilient Localization",
+  consensus: "Heuristic Consensus",
+  greedy: "Greedy Assignment",
+};
+const LIVE_SCENARIOS = [
+  {
+    name: "Raft Consensus",
+    description:
+      "Real-time stream from the Python simulator running persistent Raft leader election and replicated waypoint assignment.",
+    liveConfig: { assignment_strategy: "raft" },
+  },
+  {
+    name: "SwarmRaft",
+    description:
+      "Raft coordination with Section 3-inspired GNSS fusion, peer residual voting, and robust position recovery visible in 3D.",
+    liveConfig: { assignment_strategy: "swarmraft" },
+  },
+];
 
 
 function fmt(v) {
@@ -28,6 +49,16 @@ function websocketUrl() {
   return url.toString();
 }
 
+function mergePlaybackConfig(previous, nextConfig) {
+  const fallback = { frames: [], config: { width: 1280, height: 720 } };
+  const base = previous ?? fallback;
+  return { ...base, config: nextConfig ?? base.config };
+}
+
+function formatModeLabel(strategy) {
+  return LIVE_MODE_LABELS[strategy] ?? strategy ?? "—";
+}
+
 
 export default function SwarmConsole() {
   const [manifest, setManifest] = useState(null);
@@ -43,30 +74,11 @@ export default function SwarmConsole() {
   const [liveRunning, setLiveRunning] = useState(true);
   const [liveControlBusy, setLiveControlBusy] = useState(false);
 
-  /* ── load manifest ── */
+  /* ── load live scenarios ── */
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const res = await fetch("/data/latest/manifest.json");
-        if (!res.ok) throw new Error(`manifest ${res.status}`);
-        const data = await res.json();
-        if (cancelled) return;
-        setManifest({
-          ...data,
-          // Only expose the single live scenario — strip static playback scenarios
-          scenarios: [
-            { name: "Raft Consensus", description: "Real-time stream from the Python simulator running a Raft-inspired quorum consensus protocol for decentralised waypoint assignment." },
-          ],
-        });
-        setStatus("Raft Consensus");
-        startTransition(() => setSelectedScenarioName("Raft Consensus"));
-      } catch (e) {
-        if (!cancelled) setLoadError(e.message);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
+    setManifest({ scenarios: LIVE_SCENARIOS });
+    setStatus(LIVE_SCENARIOS[0].name);
+    startTransition(() => setSelectedScenarioName(LIVE_SCENARIOS[0].name));
   }, []);
 
   /* ── scenario selection ── */
@@ -80,35 +92,68 @@ export default function SwarmConsole() {
     let socket = null;
     if (!selectedScenario) return;
 
-    if (selectedScenario.name === "Raft Consensus") {
+    if (selectedScenario.liveConfig) {
       setIsLive(true);
       setPlayback({ frames: [], config: { width: 1280, height: 720 } });
       setLiveFrame(null);
       setFrameIndex(0);
       setLiveRunning(true);
       setLoadError(null);
-      setStatus("Live · Connecting");
+      setStatus(`Live · Configuring ${selectedScenario.name}`);
 
-      socket = new WebSocket(websocketUrl());
+      async function configureAndConnect() {
+        try {
+          const configResponse = await fetch(apiUrl("/api/config"), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(selectedScenario.liveConfig),
+          });
+          if (!configResponse.ok) {
+            throw new Error(`config ${configResponse.status}`);
+          }
 
-      socket.onopen  = () => {
-        if (cancelled) return;
-        setStatus((current) => (current === "Live · Paused" ? current : "Live · Connected"));
+          const resetResponse = await fetch(apiUrl("/api/reset"), { method: "POST" });
+          if (!resetResponse.ok) {
+            throw new Error(`reset ${resetResponse.status}`);
+          }
+          const resetPayload = await resetResponse.json();
+          if (cancelled) return;
+
+          setLiveFrame(resetPayload);
+          setPlayback((prev) => mergePlaybackConfig(prev, resetPayload.config));
+          setStatus(`Live · ${selectedScenario.name}`);
+
+          socket = new WebSocket(websocketUrl());
+
+          socket.onopen = () => {
+            if (cancelled) return;
+            setStatus((current) => (current === "Live · Paused" ? current : `Live · ${selectedScenario.name}`));
+          };
+          socket.onclose = () => {
+            if (!cancelled) setStatus("Live · Disconnected");
+          };
+          socket.onerror = () => {
+            if (!cancelled) setStatus("Live · Error");
+          };
+
+          socket.onmessage = (ev) => {
+            if (cancelled) return;
+            const data = JSON.parse(ev.data);
+            setLiveFrame(data);
+            setLiveRunning((current) => (current === false ? false : true));
+            setStatus((current) => (current === "Live · Paused" ? current : `Live · ${selectedScenario.name}`));
+            setPlayback((prev) => mergePlaybackConfig(prev, data.config));
+          };
+        } catch (e) {
+          if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
+        }
+      }
+
+      configureAndConnect();
+      return () => {
+        cancelled = true;
+        if (socket) socket.close();
       };
-      socket.onclose = () => { if (!cancelled) setStatus("Live · Disconnected"); };
-      socket.onerror = () => { if (!cancelled) setStatus("Live · Error"); };
-
-      socket.onmessage = (ev) => {
-        if (cancelled) return;
-        const data = JSON.parse(ev.data);
-        setLiveFrame(data);
-        setLiveRunning((current) => (current === false ? false : true));
-        setStatus((current) => (current === "Live · Paused" ? current : "Live · Connected"));
-        // keep playback.config in sync for SwarmScene
-        setPlayback((prev) => ({ ...prev, config: data.config ?? prev.config }));
-      };
-
-      return () => { cancelled = true; socket.close(); };
     }
 
     setIsLive(false);
@@ -149,19 +194,33 @@ export default function SwarmConsole() {
   const summary       = currentFrame?.summary ?? null;
   const currentEvents = currentFrame?.events ?? [];
 
-  async function sendLiveControl(command) {
+  async function sendLiveControl(command, requestBody = null) {
     setLiveControlBusy(true);
     try {
-      const response = await fetch(apiUrl(`/api/${command}`), { method: "POST" });
+      const response = await fetch(apiUrl(`/api/${command}`), {
+        method: "POST",
+        headers: requestBody ? { "content-type": "application/json" } : undefined,
+        body: requestBody ? JSON.stringify(requestBody) : undefined,
+      });
       if (!response.ok) {
         throw new Error(`${command} ${response.status}`);
       }
-      const payload = await response.json();
-      if (typeof payload.running === "boolean") {
-        setLiveRunning(payload.running);
-        setStatus(payload.running ? "Live · Connected" : "Live · Paused");
+      const responsePayload = await response.json();
+      if (typeof responsePayload.running === "boolean") {
+        setLiveRunning(responsePayload.running);
+        setStatus(responsePayload.running ? `Live · ${selectedScenario?.name ?? "Connected"}` : "Live · Paused");
       } else if (command === "reset") {
-        setStatus("Live · Reset");
+        if (responsePayload.tick != null) {
+          setLiveFrame(responsePayload);
+          setPlayback((prev) => mergePlaybackConfig(prev, responsePayload.config));
+        }
+        setStatus(`Live · ${selectedScenario?.name ?? "Reset"}`);
+      } else if (command === "advance") {
+        if (responsePayload.snapshot) {
+          setLiveFrame(responsePayload.snapshot);
+          setPlayback((prev) => mergePlaybackConfig(prev, responsePayload.snapshot.config));
+        }
+        setStatus(`Live · +${responsePayload.advanced_steps ?? FAST_FORWARD_STEPS} ticks`);
       } else if (command === "fail-random") {
         setStatus("Live · Failure Injected");
       }
@@ -223,6 +282,13 @@ export default function SwarmConsole() {
                   disabled={liveControlBusy}
                 >
                   Reset Sim
+                </button>
+                <button
+                  className="button"
+                  onClick={() => sendLiveControl("advance", { steps: FAST_FORWARD_STEPS })}
+                  disabled={liveControlBusy}
+                >
+                  Fast +{FAST_FORWARD_STEPS}
                 </button>
                 <button
                   className="button danger-btn"
@@ -294,6 +360,12 @@ export default function SwarmConsole() {
             <div className="sidebar-section">
               <div className="sidebar-section-title">Live Metrics</div>
               <div className="stat-row">
+                <span className="stat-label">Profile</span>
+                <span className="stat-value accent">
+                  {formatModeLabel(currentFrame?.config?.assignment_strategy)}
+                </span>
+              </div>
+              <div className="stat-row">
                 <span className="stat-label">Tick</span>
                 <span className="stat-value accent">{currentFrame?.tick ?? "—"}</span>
               </div>
@@ -339,6 +411,32 @@ export default function SwarmConsole() {
                 <span className="stat-label">Assignment Δ</span>
                 <span className="stat-value">{summary ? summary.assignment_changes : "—"}</span>
               </div>
+              {summary?.swarmraft_enabled ? (
+                <>
+                  <div className="stat-row">
+                    <span className="stat-label">Suspected</span>
+                    <span className={`stat-value ${summary.swarmraft_suspected_agents > 0 ? "warning" : ""}`}>
+                      {summary.swarmraft_suspected_agents}
+                    </span>
+                  </div>
+                  <div className="stat-row">
+                    <span className="stat-label">Recovered</span>
+                    <span className="stat-value positive">{summary.swarmraft_recovered_agents}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span className="stat-label">GNSS Error</span>
+                    <span className="stat-value">{fmt(summary.swarmraft_mean_gnss_error)}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span className="stat-label">Recovered Error</span>
+                    <span className="stat-value">{fmt(summary.swarmraft_mean_consensus_error)}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span className="stat-label">Residual</span>
+                    <span className="stat-value">{fmt(summary.swarmraft_mean_residual)}</span>
+                  </div>
+                </>
+              ) : null}
             </div>
 
             {/* Events log */}

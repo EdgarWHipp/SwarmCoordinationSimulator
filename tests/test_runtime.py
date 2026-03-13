@@ -27,16 +27,31 @@ class SimulationRuntimeTest(unittest.IsolatedAsyncioTestCase):
         await self.runtime.stop()
 
     async def test_runtime_updates_tick_seconds_and_render_stride_live(self) -> None:
-        updated = await self.runtime.update_config(tick_seconds=0.04, render_stride=2)
+        updated = await self.runtime.update_config(
+            tick_seconds=0.04,
+            render_stride=2,
+            assignment_strategy="swarmraft",
+        )
 
         self.assertEqual(updated["tick_seconds"], 0.04)
         self.assertEqual(updated["render_stride"], 2)
+        self.assertEqual(updated["assignment_strategy"], "swarmraft")
         self.assertTrue(self.runtime.process.is_alive())
 
         snapshot = await self.runtime.snapshot()
         self.assertEqual(snapshot["config"]["tick_seconds"], 0.04)
         self.assertEqual(snapshot["config"]["render_stride"], 2)
+        self.assertEqual(snapshot["config"]["assignment_strategy"], "swarmraft")
         self.assertIsInstance(self.runtime.latest_snapshot_msgpack, bytes)
+
+    async def test_runtime_can_advance_multiple_ticks_immediately(self) -> None:
+        await self.runtime.pause()
+        starting_tick = (await self.runtime.snapshot())["tick"]
+
+        payload = await self.runtime.advance(12)
+
+        self.assertEqual(payload["advanced_steps"], 12)
+        self.assertGreaterEqual(payload["snapshot"]["tick"], starting_tick + 12)
 
 
 class TransportBenchmarkTest(unittest.TestCase):

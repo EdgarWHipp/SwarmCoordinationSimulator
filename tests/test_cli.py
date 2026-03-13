@@ -29,6 +29,7 @@ class SwarmCliTest(unittest.TestCase):
 
         self.assertIn(INSTALL_URL, help_text)
         self.assertIn("swarm-cli --help", help_text)
+        self.assertIn("swarmraft", help_text)
 
     def test_render_ascii_includes_header_and_legend(self) -> None:
         simulator = SwarmSimulator(

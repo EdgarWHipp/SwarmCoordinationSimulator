@@ -21,6 +21,11 @@ const COMMAND_ROWS = [
       "PYTHONPATH=src python3 -m swarm_sim.cli --steps 360 --agents 32 --assignment-strategy raft --failure-tick 180 --json",
     description: "Run a Raft scenario with a deterministic failure event in the middle of the mission.",
   },
+  {
+    command:
+      "PYTHONPATH=src python3 -m swarm_sim.cli --steps 300 --agents 24 --assignment-strategy swarmraft --json",
+    description: "Run the SwarmRaft localization-and-recovery mode with Raft-backed assignment commits.",
+  },
 ];
 
 const FLAG_ROWS = [
@@ -41,7 +46,7 @@ const FLAG_ROWS = [
   },
   {
     flag: "--assignment-strategy",
-    description: "Coordination mode: `raft`, `consensus`, or `greedy`.",
+    description: "Coordination mode: `raft`, `swarmraft`, `consensus`, or `greedy`.",
     example: "--assignment-strategy raft",
   },
   {

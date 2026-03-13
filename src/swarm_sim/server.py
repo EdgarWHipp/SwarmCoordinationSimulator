@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from swarm_sim.runtime import SimulationRuntime
+from swarm_sim.simulator import SUPPORTED_ASSIGNMENT_STRATEGIES
 
 
 def _cors_origins() -> list[str]:
@@ -92,6 +93,10 @@ def create_app() -> FastAPI:
     async def fail_random() -> JSONResponse:
         return JSONResponse(await runtime.inject_random_failure())
 
+    @app.post("/api/advance")
+    async def advance(payload: dict[str, Any] = Body(default={})) -> JSONResponse:
+        return JSONResponse(await runtime.advance(int(payload.get("steps", 300))))
+
     @app.get("/api/config")
     async def get_config() -> JSONResponse:
         return JSONResponse(
@@ -99,6 +104,7 @@ def create_app() -> FastAPI:
                 "config": await runtime.current_config(),
                 "websocket_json_backend": runtime.websocket_json_backend,
                 "websocket_encodings": ["json", "msgpack"],
+                "assignment_strategies": list(SUPPORTED_ASSIGNMENT_STRATEGIES),
             }
         )
 
@@ -107,12 +113,14 @@ def create_app() -> FastAPI:
         config = await runtime.update_config(
             tick_seconds=payload.get("tick_seconds"),
             render_stride=payload.get("render_stride"),
+            assignment_strategy=payload.get("assignment_strategy"),
         )
         return JSONResponse(
             {
                 "config": config,
                 "websocket_json_backend": runtime.websocket_json_backend,
                 "websocket_encodings": ["json", "msgpack"],
+                "assignment_strategies": list(SUPPORTED_ASSIGNMENT_STRATEGIES),
             }
         )
 

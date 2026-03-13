@@ -44,6 +44,14 @@ DEFAULT_SCENARIOS: tuple[ExperimentScenario, ...] = (
         },
     ),
     ExperimentScenario(
+        name="swarmraft-baseline",
+        description="SwarmRaft localization fusion with Raft coordination and no failures.",
+        config_overrides={
+            "assignment_strategy": "swarmraft",
+            "failure_tick": None,
+        },
+    ),
+    ExperimentScenario(
         name="greedy-dropout",
         description="Nearest-waypoint greedy assignment under dropout for comparison.",
         config_overrides={

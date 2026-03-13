@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--waypoints", type=int, default=None, help="Number of waypoints.")
     parser.add_argument(
         "--assignment-strategy",
-        choices=("raft", "consensus", "greedy"),
+        choices=("raft", "swarmraft", "consensus", "greedy"),
         default="raft",
         help="Waypoint assignment strategy.",
     )
@@ -226,6 +226,11 @@ def format_metrics_text(metrics: dict[str, Any]) -> str:
         f"raft_leader_id: {final.get('raft_leader_id')}",
         f"raft_term: {final.get('raft_term')}",
         f"raft_quorum_available: {final.get('raft_quorum_available')}",
+        f"swarmraft_enabled: {final.get('swarmraft_enabled')}",
+        f"swarmraft_suspected_agents: {final.get('swarmraft_suspected_agents')}",
+        f"swarmraft_recovered_agents: {final.get('swarmraft_recovered_agents')}",
+        f"swarmraft_mean_gnss_error: {final.get('swarmraft_mean_gnss_error')}",
+        f"swarmraft_mean_consensus_error: {final.get('swarmraft_mean_consensus_error')}",
         f"active_collision_pairs: {final['active_collision_pairs']}",
         f"collision_events_total: {final['collision_events_total']}",
         f"waypoint_completions: {final['waypoint_completions']}",

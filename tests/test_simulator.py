@@ -90,6 +90,51 @@ class SwarmSimulatorTest(unittest.TestCase):
         self.assertIn("cohesion_score", snapshot["summary"])
         self.assertIn("consensus_success_ratio", snapshot["summary"])
 
+    def test_swarmraft_snapshot_contains_localization_payload(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=4,
+                waypoint_count=4,
+                planning_interval=1,
+                failure_tick=None,
+                assignment_strategy="swarmraft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
+            ),
+            seed=33,
+        )
+
+        first_snapshot = simulator.step()
+        second_snapshot = simulator.step()
+
+        self.assertTrue(second_snapshot["summary"]["swarmraft_enabled"])
+        self.assertIn("swarmraft", second_snapshot)
+        self.assertTrue(second_snapshot["swarmraft"]["enabled"])
+        self.assertIsNotNone(second_snapshot["drones"][0]["swarmraft"])
+        self.assertIn("recovered_position", second_snapshot["drones"][0]["swarmraft"])
+        self.assertEqual(first_snapshot["config"]["assignment_strategy"], "swarmraft")
+
+    def test_reset_without_explicit_seed_changes_spawn_layout(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=4,
+                waypoint_count=4,
+                failure_tick=None,
+            ),
+            seed=33,
+        )
+
+        first_snapshot = simulator.snapshot()
+        second_snapshot = simulator.reset()
+
+        first_drone_positions = [drone["position"] for drone in first_snapshot["drones"]]
+        second_drone_positions = [drone["position"] for drone in second_snapshot["drones"]]
+        first_waypoint_positions = [waypoint["position"] for waypoint in first_snapshot["waypoints"]]
+        second_waypoint_positions = [waypoint["position"] for waypoint in second_snapshot["waypoints"]]
+
+        self.assertNotEqual(first_drone_positions, second_drone_positions)
+        self.assertNotEqual(first_waypoint_positions, second_waypoint_positions)
+
     def test_snapshot_config_round_trips_non_default_weights(self) -> None:
         simulator = SwarmSimulator(
             config=SwarmConfig(

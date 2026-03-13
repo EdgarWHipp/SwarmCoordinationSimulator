@@ -36,11 +36,25 @@ class ServerApiTest(unittest.TestCase):
             response = client.get("/api/config")
             self.assertEqual(response.status_code, 200)
             self.assertIn("config", response.json())
+            self.assertIn("assignment_strategies", response.json())
 
-            update = client.post("/api/config", json={"tick_seconds": 0.04, "render_stride": 2})
+            update = client.post(
+                "/api/config",
+                json={
+                    "tick_seconds": 0.04,
+                    "render_stride": 2,
+                    "assignment_strategy": "swarmraft",
+                },
+            )
             self.assertEqual(update.status_code, 200)
             self.assertEqual(update.json()["config"]["tick_seconds"], 0.04)
             self.assertEqual(update.json()["config"]["render_stride"], 2)
+            self.assertEqual(update.json()["config"]["assignment_strategy"], "swarmraft")
+
+            advance = client.post("/api/advance", json={"steps": 10})
+            self.assertEqual(advance.status_code, 200)
+            self.assertEqual(advance.json()["advanced_steps"], 10)
+            self.assertIn("snapshot", advance.json())
 
 
 if __name__ == "__main__":
