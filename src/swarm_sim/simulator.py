@@ -95,6 +95,11 @@ class SwarmConfig:
             "route_reach_radius": self.route_reach_radius,
             "navigation_cols": self.navigation_cols,
             "navigation_rows": self.navigation_rows,
+            "cohesion_weight": self.cohesion_weight,
+            "alignment_weight": self.alignment_weight,
+            "separation_weight": self.separation_weight,
+            "waypoint_weight": self.waypoint_weight,
+            "boundary_weight": self.boundary_weight,
             "failure_tick": self.failure_tick,
             "failure_recovery_ticks": self.failure_recovery_ticks,
             "raft_heartbeat_ticks": self.raft_heartbeat_ticks,
@@ -547,7 +552,7 @@ class SwarmSimulator:
 
     def step(self) -> dict[str, Any]:
         self.tick += 1
-        self.elapsed_seconds = round(self.elapsed_seconds + self.config.tick_seconds, 2)
+        self.elapsed_seconds += self.config.tick_seconds
 
         if self.config.failure_tick is not None and self.tick == self.config.failure_tick:
             self.inject_random_failure()
@@ -649,7 +654,9 @@ class SwarmSimulator:
 
     def _run_failure_recovery(self) -> None:
         orphaned_waypoints = sorted(self.pending_failure_waypoints)
-        self._plan_waypoints()
+        committed = self._plan_waypoints()
+        if not committed:
+            return
 
         latency = (
             self.tick - self.pending_failure_recovery_since_tick
@@ -811,10 +818,10 @@ class SwarmSimulator:
         full_assignments[self.failed] = -1
         return full_assignments
 
-    def _plan_waypoints(self) -> None:
+    def _plan_waypoints(self) -> bool:
         active_indices = np.flatnonzero(~self.failed)
         if active_indices.size == 0:
-            return
+            return False
 
         score_matrix = self._score_matrix(active_indices)
 
@@ -860,7 +867,7 @@ class SwarmSimulator:
                 self.last_assignment_changes = 0
                 for event in raft_events:
                     self.events.append(event)
-                return
+                return False
             self._apply_assignments(committed_assignments.astype(np.int32))
             committed = int(np.count_nonzero(committed_assignments >= 0))
             contention_count = 0
@@ -879,6 +886,7 @@ class SwarmSimulator:
             self.events.append(
                 f"Planning epoch {self.consensus_rounds} resolved {contention_count} contested claims."
             )
+        return True
 
     def _refresh_routes(self) -> None:
         active_indices = np.flatnonzero(~self.failed)

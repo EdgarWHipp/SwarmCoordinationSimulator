@@ -15,9 +15,29 @@ from swarm_sim.taichi_backend import taichi_available
 
 
 class SwarmSimulatorTest(unittest.TestCase):
+    def test_invalid_raft_timeout_config_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            SwarmSimulator(
+                config=SwarmConfig(
+                    drone_count=4,
+                    waypoint_count=4,
+                    failure_tick=None,
+                    assignment_strategy="raft",
+                    raft_election_timeout_min_ticks=5,
+                    raft_election_timeout_max_ticks=4,
+                ),
+                seed=3,
+            )
+
     def test_consensus_assigns_unique_waypoints(self) -> None:
         simulator = SwarmSimulator(
-            config=SwarmConfig(drone_count=5, waypoint_count=5, planning_interval=1, failure_tick=None),
+            config=SwarmConfig(
+                drone_count=5,
+                waypoint_count=5,
+                planning_interval=1,
+                failure_tick=None,
+                assignment_strategy="consensus",
+            ),
             seed=11,
         )
 
@@ -33,7 +53,15 @@ class SwarmSimulatorTest(unittest.TestCase):
 
     def test_failure_injection_marks_dropout(self) -> None:
         simulator = SwarmSimulator(
-            config=SwarmConfig(drone_count=4, waypoint_count=4, planning_interval=1, failure_tick=1),
+            config=SwarmConfig(
+                drone_count=4,
+                waypoint_count=4,
+                planning_interval=1,
+                failure_tick=1,
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
+            ),
             seed=5,
         )
 
@@ -44,7 +72,15 @@ class SwarmSimulatorTest(unittest.TestCase):
 
     def test_snapshot_contains_metrics_summary(self) -> None:
         simulator = SwarmSimulator(
-            config=SwarmConfig(drone_count=3, waypoint_count=3, planning_interval=1, failure_tick=None),
+            config=SwarmConfig(
+                drone_count=3,
+                waypoint_count=3,
+                planning_interval=1,
+                failure_tick=None,
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
+            ),
             seed=21,
         )
 
@@ -54,6 +90,29 @@ class SwarmSimulatorTest(unittest.TestCase):
         self.assertIn("cohesion_score", snapshot["summary"])
         self.assertIn("consensus_success_ratio", snapshot["summary"])
 
+    def test_snapshot_config_round_trips_non_default_weights(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=3,
+                waypoint_count=3,
+                failure_tick=None,
+                cohesion_weight=0.25,
+                alignment_weight=0.31,
+                separation_weight=4.2,
+                waypoint_weight=3.1,
+                boundary_weight=0.9,
+            ),
+            seed=19,
+        )
+
+        snapshot = simulator.snapshot()
+
+        self.assertEqual(snapshot["config"]["cohesion_weight"], 0.25)
+        self.assertEqual(snapshot["config"]["alignment_weight"], 0.31)
+        self.assertEqual(snapshot["config"]["separation_weight"], 4.2)
+        self.assertEqual(snapshot["config"]["waypoint_weight"], 3.1)
+        self.assertEqual(snapshot["config"]["boundary_weight"], 0.9)
+
     def test_failure_recovery_reassigns_within_window(self) -> None:
         simulator = SwarmSimulator(
             config=SwarmConfig(
@@ -62,6 +121,9 @@ class SwarmSimulatorTest(unittest.TestCase):
                 planning_interval=10,
                 failure_tick=None,
                 failure_recovery_ticks=2,
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
             ),
             seed=17,
         )
@@ -84,9 +146,59 @@ class SwarmSimulatorTest(unittest.TestCase):
         )
         self.assertFalse(recovery_snapshot["summary"]["failure_recovery_pending"])
 
+    def test_raft_elects_and_persists_leader_until_failure(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=5,
+                waypoint_count=5,
+                planning_interval=2,
+                failure_tick=None,
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
+            ),
+            seed=41,
+        )
+
+        first_snapshot = simulator.step()
+        leader_id = first_snapshot["summary"]["raft_leader_id"]
+        self.assertIsNotNone(leader_id)
+
+        second_snapshot = simulator.step()
+        self.assertEqual(second_snapshot["summary"]["raft_leader_id"], leader_id)
+
+        simulator.inject_failure(leader_id)
+        third_snapshot = simulator.step()
+        fourth_snapshot = simulator.step()
+        self.assertNotEqual(fourth_snapshot["summary"]["raft_leader_id"], leader_id)
+        self.assertIsNotNone(fourth_snapshot["summary"]["raft_leader_id"])
+
+    def test_raft_reset_respects_configured_election_timeout_bounds(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=4,
+                waypoint_count=4,
+                failure_tick=None,
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=5,
+                raft_election_timeout_max_ticks=5,
+            ),
+            seed=13,
+        )
+
+        self.assertTrue((simulator.raft.election_deadline_tick == 5).all())
+
     def test_dynamic_tick_update_keeps_elapsed_time_monotonic(self) -> None:
         simulator = SwarmSimulator(
-            config=SwarmConfig(drone_count=4, waypoint_count=4, planning_interval=1, failure_tick=None),
+            config=SwarmConfig(
+                drone_count=4,
+                waypoint_count=4,
+                planning_interval=1,
+                failure_tick=None,
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
+            ),
             seed=23,
         )
 
@@ -97,6 +209,27 @@ class SwarmSimulatorTest(unittest.TestCase):
         self.assertEqual(snapshot["config"]["tick_seconds"], 0.04)
         self.assertEqual(snapshot["config"]["render_stride"], 2)
         self.assertEqual(snapshot["elapsed_seconds"], 0.12)
+
+    def test_elapsed_seconds_keeps_subcentisecond_precision(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=4,
+                waypoint_count=4,
+                planning_interval=1,
+                failure_tick=None,
+                tick_seconds=0.005,
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
+            ),
+            seed=27,
+        )
+
+        simulator.step()
+        simulator.step()
+        simulator.step()
+
+        self.assertAlmostEqual(simulator.elapsed_seconds, 0.015, places=9)
 
     def test_taichi_backend_smoke(self) -> None:
         if not taichi_available():
@@ -109,6 +242,9 @@ class SwarmSimulatorTest(unittest.TestCase):
                 planning_interval=1,
                 failure_tick=None,
                 physics_backend="taichi",
+                assignment_strategy="raft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=2,
             ),
             seed=9,
         )

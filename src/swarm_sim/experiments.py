@@ -28,18 +28,18 @@ class ExperimentScenario:
 
 DEFAULT_SCENARIOS: tuple[ExperimentScenario, ...] = (
     ExperimentScenario(
-        name="consensus-baseline",
-        description="Consensus waypoint assignment with nominal comms and no failures.",
+        name="raft-baseline",
+        description="Raft leader election with replicated waypoint assignments and no failures.",
         config_overrides={
-            "assignment_strategy": "consensus",
+            "assignment_strategy": "raft",
             "failure_tick": None,
         },
     ),
     ExperimentScenario(
-        name="consensus-dropout",
-        description="Consensus assignment under single-agent dropout.",
+        name="raft-dropout",
+        description="Raft assignment under single-agent dropout with leader failover if needed.",
         config_overrides={
-            "assignment_strategy": "consensus",
+            "assignment_strategy": "raft",
             "failure_tick": 240,
         },
     ),
@@ -52,8 +52,8 @@ DEFAULT_SCENARIOS: tuple[ExperimentScenario, ...] = (
         },
     ),
     ExperimentScenario(
-        name="low-comms-consensus",
-        description="Consensus assignment with reduced communication radius and dropout.",
+        name="heuristic-consensus-dropout",
+        description="Legacy local-vote consensus heuristic under dropout for comparison against Raft.",
         config_overrides={
             "assignment_strategy": "consensus",
             "failure_tick": 240,

@@ -6,14 +6,30 @@ import os
 import sys
 import time
 from statistics import fmean
+from textwrap import dedent
 from typing import Any
 
 from swarm_sim.simulator import SwarmConfig, SwarmSimulator
 
+INSTALL_URL = "https://swarmsim.app/install.sh"
+SWARM_COLOR = "\x1b[38;2;108;111;255m"
+RESET_COLOR = "\x1b[0m"
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the swarm simulator in a terminal and print metrics."
+        ,
+        epilog=dedent(
+            f"""\
+            Quick start:
+              Install: curl -fsSL {INSTALL_URL} | bash
+              Help:    swarm-cli --help
+              Run:     swarm-cli --steps 240 --agents 24 --waypoints 24
+              Live:    swarm-cli --live --steps 240 --agents 24 --render-every 4 --factor 2
+              JSON:    swarm-cli --steps 240 --agents 24 --json
+            """
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--steps", type=int, default=240, help="Number of simulation ticks to run.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed for repeatable runs.")
@@ -21,8 +37,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--waypoints", type=int, default=None, help="Number of waypoints.")
     parser.add_argument(
         "--assignment-strategy",
-        choices=("consensus", "greedy"),
-        default="consensus",
+        choices=("raft", "consensus", "greedy"),
+        default="raft",
         help="Waypoint assignment strategy.",
     )
     parser.add_argument(
@@ -83,7 +99,32 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print the final metrics payload as JSON.",
     )
+    return parser
+
+
+def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     return parser.parse_args()
+
+
+def format_swarm_banner() -> str:
+    return "\n".join(
+        (
+            " ####   #   #   ###   ####   #   #",
+            "#       #   #  #   #  #   #  ## ##",
+            " ###    # # #  #####  ####   # # #",
+            "    #   ## ##  #   #  #  #   #   #",
+            "####    #   #  #   #  #   #  #   #",
+        )
+    )
+
+
+def print_swarm_banner(*, stream: Any) -> None:
+    banner = format_swarm_banner()
+    if hasattr(stream, "isatty") and stream.isatty() and not os.environ.get("NO_COLOR"):
+        stream.write(f"{SWARM_COLOR}{banner}{RESET_COLOR}\n")
+    else:
+        stream.write(f"{banner}\n")
+    stream.flush()
 
 
 def _grid_index(value: float, maximum: float, cells: int) -> int:
@@ -182,6 +223,9 @@ def format_metrics_text(metrics: dict[str, Any]) -> str:
         f"ticks_per_wall_second: {metrics['ticks_per_wall_second']}",
         f"active_agents: {final['active_agents']}",
         f"failed_agents: {final['failed_agents']}",
+        f"raft_leader_id: {final.get('raft_leader_id')}",
+        f"raft_term: {final.get('raft_term')}",
+        f"raft_quorum_available: {final.get('raft_quorum_available')}",
         f"active_collision_pairs: {final['active_collision_pairs']}",
         f"collision_events_total: {final['collision_events_total']}",
         f"waypoint_completions: {final['waypoint_completions']}",
@@ -203,7 +247,15 @@ def format_metrics_text(metrics: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    args = parse_args()
+    parser = build_parser()
+    print_swarm_banner(stream=sys.stderr)
+
+    if len(sys.argv) == 1:
+        sys.stderr.write("error: not enough parameters. Use --help for the full reference.\n\n")
+        parser.print_help(sys.stderr)
+        raise SystemExit(2)
+
+    args = parse_args(parser)
     waypoint_count = args.waypoints if args.waypoints is not None else args.agents
     failure_tick = None if args.failure_tick < 0 else args.failure_tick
     config = SwarmConfig(

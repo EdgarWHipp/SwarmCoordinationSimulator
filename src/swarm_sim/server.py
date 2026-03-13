@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from swarm_sim.runtime import SimulationRuntime
 
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+def _cors_origins() -> list[str]:
+    configured = os.environ.get("SWARM_CORS_ORIGINS")
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
 
 def create_app() -> FastAPI:
@@ -34,10 +42,29 @@ def create_app() -> FastAPI:
         version="0.2.0",
         lifespan=lifespan,
     )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    async def index() -> JSONResponse:
+        return JSONResponse(
+            {
+                "service": "swarm-sim",
+                "status": "ok",
+                "ui": "Use the Next.js frontend for visualization.",
+                "docs": "/docs",
+                "state": "/api/state",
+                "ws": "/ws",
+                "config": "/api/config",
+                "metrics": "/metrics",
+                "cors_origins": _cors_origins(),
+            }
+        )
 
     @app.get("/health")
     async def health() -> JSONResponse:

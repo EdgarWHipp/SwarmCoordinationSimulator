@@ -33,6 +33,14 @@ class RaftCoordinator:
         self.heartbeat_ticks = heartbeat_ticks
         self.election_timeout_min_ticks = election_timeout_min_ticks
         self.election_timeout_max_ticks = election_timeout_max_ticks
+        if self.heartbeat_ticks < 1:
+            raise ValueError("heartbeat_ticks must be at least 1.")
+        if self.election_timeout_min_ticks < 1:
+            raise ValueError("election_timeout_min_ticks must be at least 1.")
+        if self.election_timeout_max_ticks < self.election_timeout_min_ticks:
+            raise ValueError(
+                "election_timeout_max_ticks must be greater than or equal to election_timeout_min_ticks."
+            )
 
         self.current_term = np.zeros(node_count, dtype=np.int32)
         self.voted_for = np.full(node_count, -1, dtype=np.int32)
@@ -69,10 +77,9 @@ class RaftCoordinator:
         self.last_election_term = 0
         self.last_elected_leader = -1
 
-        initial_max = max(1, min(3, self.election_timeout_max_ticks))
         for node_index in range(self.node_count):
-            self.election_deadline_tick[node_index] = current_tick + int(
-                self.rng.integers(1, initial_max + 1)
+            self.election_deadline_tick[node_index] = (
+                current_tick + self._sample_election_timeout()
             )
 
     def majority_size(self) -> int:
@@ -181,13 +188,15 @@ class RaftCoordinator:
         return np.asarray(committed.assignments, dtype=np.int32), events
 
     def _reset_deadline(self, *, node_index: int, current_tick: int) -> None:
-        timeout = int(
+        self.election_deadline_tick[node_index] = current_tick + self._sample_election_timeout()
+
+    def _sample_election_timeout(self) -> int:
+        return int(
             self.rng.integers(
                 self.election_timeout_min_ticks,
                 self.election_timeout_max_ticks + 1,
             )
         )
-        self.election_deadline_tick[node_index] = current_tick + timeout
 
     def _log_last_index(self, node_index: int) -> int:
         return len(self.logs[node_index]) - 1

@@ -1,7 +1,10 @@
 "use client";
 
 import { startTransition, useEffect, useState } from "react";
+import SiteHeader from "./site-header";
 import SwarmScene from "./swarm-scene";
+
+const SWARM_API_BASE_URL = (process.env.NEXT_PUBLIC_SWARM_API_BASE_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
 
 function fmt(v) {
@@ -11,6 +14,18 @@ function fmt(v) {
 
 function findScenario(manifest, name) {
   return manifest?.scenarios.find((s) => s.name === name) ?? null;
+}
+
+function apiUrl(path) {
+  return new URL(path, `${SWARM_API_BASE_URL}/`).toString();
+}
+
+function websocketUrl() {
+  const url = new URL(SWARM_API_BASE_URL);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "/ws";
+  url.search = "";
+  return url.toString();
 }
 
 
@@ -25,6 +40,8 @@ export default function SwarmConsole() {
   const [loadError, setLoadError] = useState(null);
   const [isLive, setIsLive] = useState(false);
   const [liveFrame, setLiveFrame] = useState(null);
+  const [liveRunning, setLiveRunning] = useState(true);
+  const [liveControlBusy, setLiveControlBusy] = useState(false);
 
   /* ── load manifest ── */
   useEffect(() => {
@@ -68,10 +85,16 @@ export default function SwarmConsole() {
       setPlayback({ frames: [], config: { width: 1280, height: 720 } });
       setLiveFrame(null);
       setFrameIndex(0);
+      setLiveRunning(true);
+      setLoadError(null);
+      setStatus("Live · Connecting");
 
-      socket = new WebSocket("ws://127.0.0.1:8000/ws");
+      socket = new WebSocket(websocketUrl());
 
-      socket.onopen  = () => { if (!cancelled) setStatus("Live · Connected"); };
+      socket.onopen  = () => {
+        if (cancelled) return;
+        setStatus((current) => (current === "Live · Paused" ? current : "Live · Connected"));
+      };
       socket.onclose = () => { if (!cancelled) setStatus("Live · Disconnected"); };
       socket.onerror = () => { if (!cancelled) setStatus("Live · Error"); };
 
@@ -79,6 +102,8 @@ export default function SwarmConsole() {
         if (cancelled) return;
         const data = JSON.parse(ev.data);
         setLiveFrame(data);
+        setLiveRunning((current) => (current === false ? false : true));
+        setStatus((current) => (current === "Live · Paused" ? current : "Live · Connected"));
         // keep playback.config in sync for SwarmScene
         setPlayback((prev) => ({ ...prev, config: data.config ?? prev.config }));
       };
@@ -124,17 +149,34 @@ export default function SwarmConsole() {
   const summary       = currentFrame?.summary ?? null;
   const currentEvents = currentFrame?.events ?? [];
 
+  async function sendLiveControl(command) {
+    setLiveControlBusy(true);
+    try {
+      const response = await fetch(apiUrl(`/api/${command}`), { method: "POST" });
+      if (!response.ok) {
+        throw new Error(`${command} ${response.status}`);
+      }
+      const payload = await response.json();
+      if (typeof payload.running === "boolean") {
+        setLiveRunning(payload.running);
+        setStatus(payload.running ? "Live · Connected" : "Live · Paused");
+      } else if (command === "reset") {
+        setStatus("Live · Reset");
+      } else if (command === "fail-random") {
+        setStatus("Live · Failure Injected");
+      }
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLiveControlBusy(false);
+    }
+  }
+
   return (
     <>
       {/* ── Top Navigation Bar ── */}
-      <nav className="topbar">
-        <div className="topbar-brand">
-          <span className="brand-dot" />
-          <span className="brand-title">Consensus-Driven Drone Simulation</span>
-          <span className="brand-sub">Distributed Swarm Coordination</span>
-        </div>
-        <span className="status-pill">{status}</span>
-      </nav>
+      <SiteHeader status={status} />
 
       <div className="page-shell">
         {/* ── Toolbar ── */}
@@ -170,13 +212,22 @@ export default function SwarmConsole() {
               <>
                 <button
                   className="button"
-                  onClick={() => fetch("http://127.0.0.1:8000/api/reset", { method: "POST" }).catch(console.error)}
+                  onClick={() => sendLiveControl(liveRunning ? "pause" : "resume")}
+                  disabled={liveControlBusy}
+                >
+                  {liveRunning ? "Pause Sim" : "Resume Sim"}
+                </button>
+                <button
+                  className="button"
+                  onClick={() => sendLiveControl("reset")}
+                  disabled={liveControlBusy}
                 >
                   Reset Sim
                 </button>
                 <button
                   className="button danger-btn"
-                  onClick={() => fetch("http://127.0.0.1:8000/api/fail-random", { method: "POST" }).catch(console.error)}
+                  onClick={() => sendLiveControl("fail-random")}
+                  disabled={liveControlBusy}
                 >
                   Fail Drone
                 </button>
@@ -210,7 +261,7 @@ export default function SwarmConsole() {
               ) : (
                 <div className="empty-state">
                   {isLive
-                    ? "Waiting for live stream — make sure swarm-sim is running on :8000"
+                    ? `Waiting for live stream — make sure the swarm API is running at ${SWARM_API_BASE_URL}`
                     : "Select a scenario to start playback"}
                 </div>
               )}

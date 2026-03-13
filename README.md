@@ -7,7 +7,7 @@ A lightweight autonomous swarm coordination simulator built in Python with:
 - decentralized waypoint negotiation
 - boids-style local motion control
 - failure injection, re-election, and waypoint rebalancing
-- WebSocket-driven browser visualization
+- WebSocket-driven live API for the Next.js frontend
 - Prometheus metrics for swarm health observability
 - an optimized simulation core built around SoA `float32` arrays, `cKDTree`, NumPy, and Numba
 
@@ -17,7 +17,7 @@ This repo is intentionally a 2D first slice. The point is to get a credible dist
 
 - `SwarmSimulator` models drones, waypoints, consensus rounds, collision detection, and mission-point recycling.
 - `swarm-experiments` runs seeded scenario sweeps and exports playback traces plus aggregate metrics.
-- `FastAPI` serves a browser UI and streams live snapshots over WebSockets.
+- `FastAPI` exposes a live control/data API and streams snapshots over WebSockets.
 - `web/` contains a static-first Next.js 3D console for Vercel deployment.
 - `/metrics` exposes Prometheus-friendly swarm health metrics.
 - `tests/` covers core simulator behavior.
@@ -26,20 +26,22 @@ This repo is intentionally a 2D first slice. The point is to get a credible dist
 
 ```text
 simulation tick
-  -> consensus round assigns waypoint claims
+  -> Raft heartbeats or election timeout advance cluster leadership
+  -> leader appends an assignment command to the replicated log
+  -> majority commit applies waypoint claims to the swarm state machine
   -> boids steering updates drone motion
   -> collision + completion detectors emit events
   -> snapshot is pushed over WebSocket
   -> Prometheus gauges/counters are updated
 ```
 
-The current consensus model is deliberately lightweight:
+The default coordination mode is now actual Raft:
 
-1. Each active drone proposes its best waypoint using distance and contention-aware scoring.
-2. Nearby peers vote on visible proposals inside a communication radius.
-3. Winners claim waypoints, and unassigned drones fall back to the nearest free objective.
+1. Followers time out into candidates and hold a term-numbered leader election.
+2. The elected leader persists across ticks and sends heartbeats.
+3. Waypoint assignment updates are appended as log entries and only applied after majority commit.
 
-That gives you a clean bridge between classic boids behavior and a more distributed coordination story without implementing full replicated-log consensus where it is not needed.
+The older peer-scoring heuristic remains available as `assignment_strategy="consensus"` for comparison experiments.
 
 ## Performance Architecture
 
@@ -54,7 +56,7 @@ The simulator now follows the optimization order that matters for swarm workload
 - live rendering is decoupled from the fixed-timestep simulation loop through a separate worker process
 - runtime transport between the worker and API process uses `msgpack`, while the browser still receives JSON
 
-The default backend is the optimized CPU path. Taichi is available as an experimental opt-in backend for larger swarm counts and future GPU scaling.
+The default backend is the optimized CPU path. Taichi is available as an experimental opt-in backend for larger swarm counts and future GPU scaling. The default assignment strategy is `raft`.
 
 ## Quick Start
 
@@ -67,7 +69,7 @@ pip install .
 swarm-sim
 ```
 
-Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+The Python service runs on [http://127.0.0.1:8000](http://127.0.0.1:8000) as an API, not a browser UI.
 
 Useful endpoints:
 
@@ -76,6 +78,8 @@ Useful endpoints:
 - `/ws` for live state streaming
 - `/metrics` for Prometheus scraping
 - `/health` for a lightweight service-health payload
+
+By default, the API allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000`. Override that with `SWARM_CORS_ORIGINS=https://your-ui.example.com`.
 
 Run the simulator tests with:
 
@@ -120,6 +124,17 @@ If you install the package, the same tool is available as:
 ```bash
 swarm-cli --steps 240 --agents 24 --json
 ```
+
+### Next.js frontend
+
+Run the visual frontend from `web/`:
+
+```bash
+cd web
+NEXT_PUBLIC_SWARM_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+Then open [http://localhost:3000](http://localhost:3000). The live toolbar on the frontend now owns `pause`, `resume`, `reset`, and failure injection for the simulator API.
 
 Profile the hot path with:
 
@@ -212,7 +227,7 @@ Status: implemented
 
 - custom Python simulation core
 - FastAPI server
-- canvas-based browser visualizer
+- Next.js-based browser console
 - Prometheus instrumentation
 
 ### Step 2: Scenario realism
@@ -278,6 +293,7 @@ For Vercel:
 - set the project root to `web`
 - use `npm run build`
 - the app serves static experiment JSON from `web/public/data/latest`
+- set `NEXT_PUBLIC_SWARM_API_BASE_URL` if you want the deployed UI to control a live simulator API outside Vercel
 
 This is simpler and more reliable than trying to host a long-running Python simulation loop on Vercel.
 
@@ -341,4 +357,3 @@ These are the highest-signal references I’d use for the next pass of this proj
   [prometheus.github.io/client_python/](https://prometheus.github.io/client_python/)
 - Prometheus ASGI integration:
   [prometheus.github.io/client_python/exporting/http/asgi/](https://prometheus.github.io/client_python/exporting/http/asgi/)
-

@@ -9,7 +9,7 @@ from dataclasses import asdict
 from itertools import count
 from typing import Any
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 
 from swarm_sim.simulator import SwarmConfig, SwarmMetrics, SwarmSimulator
 from swarm_sim.transport import (
@@ -263,7 +263,7 @@ class SimulationRuntime:
         for client in list(self.clients):
             try:
                 await self._send_snapshot(client, self.client_encodings.get(client, "json"))
-            except RuntimeError:
+            except (RuntimeError, WebSocketDisconnect):
                 stale_clients.append(client)
         for client in stale_clients:
             self.disconnect(client)

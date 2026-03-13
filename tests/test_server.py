@@ -20,6 +20,15 @@ if HTTPX_AVAILABLE:
 
 
 class ServerApiTest(unittest.TestCase):
+    def test_root_is_api_metadata_not_html_ui(self) -> None:
+        if not HTTPX_AVAILABLE:
+            self.skipTest("httpx is not installed")
+        with TestClient(create_app()) as client:
+            response = client.get("/")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["content-type"].split(";")[0], "application/json")
+            self.assertEqual(response.json()["ui"], "Use the Next.js frontend for visualization.")
+
     def test_config_endpoint_updates_runtime(self) -> None:
         if not HTTPX_AVAILABLE:
             self.skipTest("httpx is not installed")
