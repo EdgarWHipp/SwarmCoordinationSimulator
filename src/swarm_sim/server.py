@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from prometheus_client import make_asgi_app
 
 from swarm_sim.runtime import SimulationRuntime
-
-
-STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def create_app() -> FastAPI:
@@ -35,8 +31,8 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    async def index() -> RedirectResponse:
+        return RedirectResponse(url="http://localhost:3000")
 
     @app.get("/api/state")
     async def get_state() -> JSONResponse:

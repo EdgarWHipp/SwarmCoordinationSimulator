@@ -63,7 +63,7 @@ The default backend is the optimized CPU path. Taichi is available as an experim
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install .
 swarm-sim
 ```
 

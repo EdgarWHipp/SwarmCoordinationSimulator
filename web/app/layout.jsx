@@ -2,14 +2,14 @@ import "./globals.css";
 
 
 export const metadata = {
-  title: "Swarm Console",
-  description: "3D playback and experiment review for the swarm coordination simulator.",
+  title: "Consensus-Driven Drone Simulation",
+  description: "Real-time distributed swarm coordination visualization powered by boids physics and decentralized consensus.",
 };
 
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );

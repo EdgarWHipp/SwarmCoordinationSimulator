@@ -38,14 +38,14 @@ function DroneMesh({ drone, width, height, tick, index }) {
       <mesh>
         <coneGeometry args={[5.4, 16, 4]} />
         <meshStandardMaterial
-          color={drone.failed ? "#000000" : "#ff4d00"}
-          emissive={drone.failed ? "#000000" : "#ff4d00"}
-          emissiveIntensity={0.2}
+          color={drone.failed ? "#333344" : "#6c6fff"}
+          emissive={drone.failed ? "#111122" : "#3c3fcc"}
+          emissiveIntensity={0.5}
         />
       </mesh>
       <mesh position={[-4, 0, 0]}>
         <boxGeometry args={[3.4, 1.4, 11]} />
-        <meshStandardMaterial color={drone.failed ? "#666666" : "#ffffff"} />
+        <meshStandardMaterial color={drone.failed ? "#22223a" : "#c4c5ff"} />
       </mesh>
     </group>
   );
@@ -75,14 +75,14 @@ function WaypointMesh({ waypoint, width, height, tick, index }) {
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[9, 1.4, 12, 32]} />
         <meshStandardMaterial
-          color={waypoint.claimed_by ? "#000000" : "#ff4d00"}
-          emissive={waypoint.claimed_by ? "#000000" : "#ff4d00"}
-          emissiveIntensity={0.2}
+          color={waypoint.claimed_by ? "#34d399" : "#6c6fff"}
+          emissive={waypoint.claimed_by ? "#0d4a32" : "#2a2d88"}
+          emissiveIntensity={0.6}
         />
       </mesh>
       <mesh position={[0, -3.2, 0]}>
         <cylinderGeometry args={[2, 2, 6, 12]} />
-        <meshStandardMaterial color="#000000" />
+        <meshStandardMaterial color="#0d0d1e" />
       </mesh>
     </group>
   );
@@ -96,11 +96,11 @@ function SwarmObjects({ playback, frame }) {
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.6, 0]}>
         <planeGeometry args={[width, height, 1, 1]} />
-        <meshStandardMaterial color="#f4f0ea" metalness={0.0} roughness={1.0} />
+        <meshStandardMaterial color="#0d0d18" metalness={0.1} roughness={0.9} />
       </mesh>
 
       <gridHelper
-        args={[Math.max(width, height), 24, "#000000", "#d3cec4"]}
+        args={[Math.max(width, height), 24, "#1a1a2e", "#111122"]}
         position={[0, -1.55, 0]}
       />
 
@@ -127,26 +127,17 @@ function SwarmObjects({ playback, frame }) {
       ))}
 
       {frame.drones.map((drone) => {
-        if (!drone.target_waypoint_id || drone.failed) {
-          return null;
-        }
-
-        const waypoint = frame.waypoints.find(
-          (candidate) => candidate.waypoint_id === drone.target_waypoint_id,
-        );
-        if (!waypoint) {
-          return null;
-        }
-
+        if (!drone.target_waypoint_id || drone.failed) return null;
+        const waypoint = frame.waypoints.find((c) => c.waypoint_id === drone.target_waypoint_id);
+        if (!waypoint) return null;
         const start = worldPosition(width, height, drone.position.x, drone.position.y, 16);
-        const end = worldPosition(width, height, waypoint.position.x, waypoint.position.y, 4);
-
+        const end   = worldPosition(width, height, waypoint.position.x, waypoint.position.y, 4);
         return (
           <Line
             key={`${drone.drone_id}-${waypoint.waypoint_id}`}
-            color="#ff4d00"
-            lineWidth={2}
-            opacity={0.4}
+            color="#6c6fff"
+            lineWidth={1.5}
+            opacity={0.3}
             points={[start, end]}
             transparent
           />
@@ -162,10 +153,11 @@ export default function SwarmScene({ playback, frame }) {
 
   return (
     <Canvas dpr={[1, 2]}>
-      <color attach="background" args={["#f4f0ea"]} />
-      <ambientLight intensity={1.5} />
-      <directionalLight position={[160, 240, 120]} intensity={2.5} color="#ffffff" castShadow />
-      <directionalLight position={[-120, 90, -80]} intensity={1.0} color="#ffedd8" />
+      <color attach="background" args={["#080810"]} />
+      <fog attach="fog" args={["#080810", cameraDistance * 0.7, cameraDistance * 1.6]} />
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[160, 240, 120]} intensity={1.8} color="#ffffff" />
+      <directionalLight position={[-120, 90, -80]} intensity={0.5} color="#8888ff" />
       <SwarmObjects playback={playback} frame={frame} />
       <OrbitControls
         enablePan={false}
