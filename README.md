@@ -1,4 +1,6 @@
 # Swarm Coordination Simulator
+--> Phadke A, Medrano FA, Sekharan CN, Chu T. Designing UAV Swarm Experiments: A Simulator Selection and Experiment Design Process. Sensors (Basel). 2023 Aug 23;23(17):7359. doi: 10.3390/s23177359. PMID: 37687817; PMCID: PMC10490248.
+
 
 A lightweight autonomous swarm coordination simulator built in Python with:
 
@@ -254,10 +256,6 @@ This is simpler and more reliable than trying to host a long-running Python simu
 
 I chose a custom simulator first instead of Mesa for the initial implementation because this repo needs explicit control over timing, communication range, consensus epochs, and Prometheus integration. Mesa is still a strong learning resource and a good future baseline, but it is not required for the first credible prototype.
 
-## Current Bottleneck
-
-After the KD-tree, SoA, NumPy, and Numba pass, the main remaining cost at moderate swarm sizes is snapshot serialization for the UI rather than the physics update itself. That means the next meaningful optimization is likely binary frame transport to the frontend or a lower-frequency snapshot path, not more CPU work on neighbor search.
-
 ## Learning Resources
 
 These are the highest-signal references I’d use for the next pass of this project. Links were checked on March 11, 2026.
@@ -266,34 +264,26 @@ These are the highest-signal references I’d use for the next pass of this proj
 
 - Craig Reynolds, *Flocks, Herds, and Schools: A Distributed Behavioral Model*:
   [red3d.com/cwr/papers/1987/boids.html](https://red3d.com/cwr/papers/1987/boids.html)
-  Start here for the local-rules mental model behind flocking and collision avoidance.
 - Eric Bonabeau, Marco Dorigo, Guy Theraulaz, *Swarm Intelligence: From Natural to Artificial Systems*:
   [academic.oup.com/book/40811](https://academic.oup.com/book/40811)
-  Best broad theory reference if you want the project to read like research instead of a demo.
 
 ### Consensus and Coordination
-
+- TO DO: SwarnRaft: Leveraging Consensus for Robust Drone Swarm Coordination in GNSS-Degraded Environments
 - Raft consensus overview and visualization:
   [raft.github.io](https://raft.github.io/)
-  Not a drone protocol, but the clearest way to build intuition about quorum, liveness, and failure handling.
 - Olfati-Saber, Fax, Murray, *Consensus and Cooperation in Networked Multi-Agent Systems*:
   [murray.cds.caltech.edu/index.php/Consensus_and_Cooperation_in_Networked_Multi-Agent_Systems](https://murray.cds.caltech.edu/index.php/Consensus_and_Cooperation_in_Networked_Multi-Agent_Systems)
-  Classic consensus paper for the control-theory side of distributed coordination.
 - Wang, Li, Zou, *Connectivity-maintaining Consensus of Multi-agent Systems With Communication Management Based on Predictive Control Strategy*:
   [ieee-jas.net/en/article/doi/10.1109/JAS.2023.123081](https://www.ieee-jas.net/en/article/doi/10.1109/JAS.2023.123081)
-  Useful if you want the next iteration to model communication constraints more rigorously.
 
 ### Path Planning and Current Research
 
 - NASA NTRS, *Multi-Agent Motion Planning using Deep Learning for Space Applications*:
   [ntrs.nasa.gov/citations/20220005816](https://ntrs.nasa.gov/citations/20220005816)
-  Good for understanding how multi-agent planning problems scale.
 - NASA NTRS, *UAV Path Planning for Wildfires*:
   [ntrs.nasa.gov/citations/20220015156](https://ntrs.nasa.gov/citations/20220015156)
-  Useful as a practical path-planning case study.
 - Kondo et al., *PRIMER: Perception-Aware Robust Learning-based Multiagent Trajectory Planner*:
   [arxiv.org/abs/2406.10060](https://arxiv.org/abs/2406.10060)
-  A solid recent paper for decentralized, asynchronous, collision-aware planning.
 
 ### Python and Visualization
 
@@ -323,12 +313,4 @@ These are the highest-signal references I’d use for the next pass of this proj
 - Prometheus ASGI integration:
   [prometheus.github.io/client_python/exporting/http/asgi/](https://prometheus.github.io/client_python/exporting/http/asgi/)
 
-## Suggested Next Decision
 
-Pick one direction for the next implementation pass:
-
-1. obstacle fields and no-fly zones
-2. paper plots and experiment notebooks
-3. live backend control plane on top of the static viewer
-
-If you want the fastest path to a paper-ready repo from here, I would do `2` before `3`.
