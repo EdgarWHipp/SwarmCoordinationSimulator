@@ -4,13 +4,15 @@ import sys
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from swarm_sim.simulator import SwarmConfig, SwarmSimulator
+from swarm_sim.simulator import SwarmConfig, SwarmSimulator, _limit_and_move
 from swarm_sim.taichi_backend import taichi_available
 
 
@@ -100,6 +102,10 @@ class SwarmSimulatorTest(unittest.TestCase):
                 assignment_strategy="swarmraft",
                 raft_election_timeout_min_ticks=1,
                 raft_election_timeout_max_ticks=2,
+                swarmraft_attacked_drones=1,
+                swarmraft_fault_budget=1,
+                swarmraft_enable_gnss_attack=True,
+                swarmraft_enable_range_attack=True,
             ),
             seed=33,
         )
@@ -108,10 +114,19 @@ class SwarmSimulatorTest(unittest.TestCase):
         second_snapshot = simulator.step()
 
         self.assertTrue(second_snapshot["summary"]["swarmraft_enabled"])
+        self.assertEqual(second_snapshot["summary"]["swarmraft_protocol_phase"], "Finalize")
         self.assertIn("swarmraft", second_snapshot)
         self.assertTrue(second_snapshot["swarmraft"]["enabled"])
+        self.assertEqual(second_snapshot["swarmraft"]["protocol_phase"], "Finalize")
+        self.assertEqual(
+            second_snapshot["swarmraft"]["protocol_steps"],
+            ["Sense", "Inform", "Estimate", "Evaluate", "Recover", "Finalize"],
+        )
         self.assertIsNotNone(second_snapshot["drones"][0]["swarmraft"])
+        self.assertIn("ins_position", second_snapshot["drones"][0]["swarmraft"])
         self.assertIn("recovered_position", second_snapshot["drones"][0]["swarmraft"])
+        self.assertIn("local_report_position", second_snapshot["drones"][0]["swarmraft"])
+        self.assertIn("recovery_mode", second_snapshot["drones"][0]["swarmraft"])
         self.assertEqual(first_snapshot["config"]["assignment_strategy"], "swarmraft")
 
     def test_reset_without_explicit_seed_changes_spawn_layout(self) -> None:
@@ -146,6 +161,13 @@ class SwarmSimulatorTest(unittest.TestCase):
                 separation_weight=4.2,
                 waypoint_weight=3.1,
                 boundary_weight=0.9,
+                velocity_damping=1.6,
+                swarmraft_fault_budget=2,
+                swarmraft_threshold_k=2.5,
+                swarmraft_attacked_drones=2,
+                swarmraft_enable_gnss_attack=True,
+                swarmraft_enable_range_attack=True,
+                swarmraft_enable_collusion=True,
             ),
             seed=19,
         )
@@ -157,6 +179,33 @@ class SwarmSimulatorTest(unittest.TestCase):
         self.assertEqual(snapshot["config"]["separation_weight"], 4.2)
         self.assertEqual(snapshot["config"]["waypoint_weight"], 3.1)
         self.assertEqual(snapshot["config"]["boundary_weight"], 0.9)
+        self.assertEqual(snapshot["config"]["velocity_damping"], 1.6)
+        self.assertEqual(snapshot["config"]["swarmraft_fault_budget"], 2)
+        self.assertEqual(snapshot["config"]["swarmraft_threshold_k"], 2.5)
+        self.assertEqual(snapshot["config"]["swarmraft_attacked_drones"], 2)
+        self.assertTrue(snapshot["config"]["swarmraft_enable_gnss_attack"])
+        self.assertTrue(snapshot["config"]["swarmraft_enable_range_attack"])
+        self.assertTrue(snapshot["config"]["swarmraft_enable_collusion"])
+
+    def test_velocity_damping_reduces_speed_without_force(self) -> None:
+        positions = np.array([[100.0, 100.0]], dtype=np.float32)
+        velocities = np.array([[10.0, 0.0]], dtype=np.float32)
+        active_indices = np.array([0], dtype=np.int32)
+        total_force = np.zeros((1, 2), dtype=np.float32)
+
+        _limit_and_move(
+            positions,
+            velocities,
+            active_indices,
+            total_force,
+            0.08,
+            85.0,
+            1.35,
+            1280.0,
+            720.0,
+        )
+
+        self.assertLess(float(np.linalg.norm(velocities[0])), 10.0)
 
     def test_failure_recovery_reassigns_within_window(self) -> None:
         simulator = SwarmSimulator(
@@ -190,6 +239,73 @@ class SwarmSimulatorTest(unittest.TestCase):
             2,
         )
         self.assertFalse(recovery_snapshot["summary"]["failure_recovery_pending"])
+
+    def test_swarmraft_recovery_improves_error_under_attack(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=6,
+                waypoint_count=6,
+                planning_interval=1,
+                failure_tick=None,
+                assignment_strategy="swarmraft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=1,
+                swarmraft_attacked_drones=1,
+                swarmraft_fault_budget=1,
+                swarmraft_enable_gnss_attack=True,
+                swarmraft_enable_range_attack=True,
+                swarmraft_enable_collusion=True,
+                swarmraft_gnss_attack_bias_std=52.0,
+                swarmraft_range_attack_bias_std=20.0,
+            ),
+            seed=57,
+        )
+
+        snapshot = simulator.snapshot()
+        for _ in range(4):
+            snapshot = simulator.step()
+
+        summary = snapshot["summary"]
+        self.assertEqual(summary["swarmraft_attacked_agents"], 1)
+        self.assertGreaterEqual(summary["swarmraft_true_positive_detections"], 1)
+        self.assertLess(summary["swarmraft_mean_consensus_error"], summary["swarmraft_mean_gnss_error"])
+
+    def test_swarmraft_recovery_resets_ins_on_detected_attack(self) -> None:
+        simulator = SwarmSimulator(
+            config=SwarmConfig(
+                drone_count=6,
+                waypoint_count=6,
+                planning_interval=1,
+                failure_tick=None,
+                assignment_strategy="swarmraft",
+                raft_election_timeout_min_ticks=1,
+                raft_election_timeout_max_ticks=1,
+                swarmraft_attacked_drones=1,
+                swarmraft_fault_budget=1,
+                swarmraft_enable_gnss_attack=True,
+                swarmraft_enable_range_attack=True,
+                swarmraft_enable_collusion=True,
+                swarmraft_gnss_attack_bias_std=52.0,
+                swarmraft_range_attack_bias_std=20.0,
+            ),
+            seed=63,
+        )
+
+        for _ in range(5):
+            snapshot = simulator.step()
+            if snapshot["summary"]["swarmraft_recovered_agents"] > 0:
+                break
+        else:
+            self.fail("expected SwarmRaft to recover at least one attacked drone")
+
+        recovered_indices = np.flatnonzero(simulator.swarmraft.recovered_mask)
+        self.assertGreaterEqual(recovered_indices.size, 1)
+        self.assertTrue(
+            np.allclose(
+                simulator.swarmraft.ins_positions[recovered_indices],
+                simulator.swarmraft.recovered_positions[recovered_indices],
+            )
+        )
 
     def test_raft_elects_and_persists_leader_until_failure(self) -> None:
         simulator = SwarmSimulator(

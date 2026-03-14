@@ -20,12 +20,43 @@ from swarm_sim.transport import (
 )
 
 
+CONFIGURE_FIELDS = (
+    "drone_count",
+    "waypoint_count",
+    "tick_seconds",
+    "render_stride",
+    "speed_multiplier",
+    "assignment_strategy",
+    "swarmraft_fault_budget",
+    "swarmraft_threshold_k",
+    "swarmraft_attacked_drones",
+    "swarmraft_enable_gnss_attack",
+    "swarmraft_enable_range_attack",
+    "swarmraft_enable_collusion",
+    "swarmraft_gnss_attack_bias_std",
+    "swarmraft_range_attack_bias_std",
+)
+
+
 def _pack_message(payload: dict[str, Any]) -> bytes:
     return pack_msgpack(payload)
 
 
 def _unpack_message(payload: bytes) -> dict[str, Any]:
     return unpack_msgpack(payload)
+
+
+def _tick_interval_seconds(simulator: SwarmSimulator) -> float:
+    return simulator.config.tick_seconds / max(simulator.config.speed_multiplier, 1e-6)
+
+
+def _merged_config(simulator: SwarmSimulator, command: dict[str, Any]) -> dict[str, Any]:
+    config_data = simulator.config.as_dict()
+    for field in CONFIGURE_FIELDS:
+        value = command.get(field)
+        if value is not None:
+            config_data[field] = value
+    return config_data
 
 
 def _worker_main(
@@ -63,36 +94,56 @@ def _worker_main(
                     payload = {"running": False}
                 elif name == "resume":
                     running = True
-                    next_tick_at = time.perf_counter() + simulator.config.tick_seconds
+                    next_tick_at = time.perf_counter() + _tick_interval_seconds(simulator)
                     payload = {"running": True}
                 elif name == "configure":
-                    payload = {
-                        "config": simulator.update_config(
-                            tick_seconds=command.get("tick_seconds"),
-                            render_stride=command.get("render_stride"),
-                            assignment_strategy=command.get("assignment_strategy"),
-                        ),
-                        "snapshot": simulator.snapshot(),
-                    }
+                    if (
+                        command.get("drone_count") is not None
+                        or command.get("waypoint_count") is not None
+                    ):
+                        config_payload = _merged_config(simulator, command)
+                        simulator = SwarmSimulator(
+                            config=SwarmConfig(**config_payload),
+                            seed=simulator.seed,
+                        )
+                        payload = {
+                            "config": simulator.config.as_dict(),
+                            "snapshot": simulator.snapshot(),
+                        }
+                    else:
+                        payload = {
+                            "config": simulator.update_config(
+                                tick_seconds=command.get("tick_seconds"),
+                                render_stride=command.get("render_stride"),
+                                speed_multiplier=command.get("speed_multiplier"),
+                                assignment_strategy=command.get("assignment_strategy"),
+                                swarmraft_fault_budget=command.get("swarmraft_fault_budget"),
+                                swarmraft_threshold_k=command.get("swarmraft_threshold_k"),
+                                swarmraft_attacked_drones=command.get("swarmraft_attacked_drones"),
+                                swarmraft_enable_gnss_attack=command.get(
+                                    "swarmraft_enable_gnss_attack"
+                                ),
+                                swarmraft_enable_range_attack=command.get(
+                                    "swarmraft_enable_range_attack"
+                                ),
+                                swarmraft_enable_collusion=command.get("swarmraft_enable_collusion"),
+                                swarmraft_gnss_attack_bias_std=command.get(
+                                    "swarmraft_gnss_attack_bias_std"
+                                ),
+                                swarmraft_range_attack_bias_std=command.get(
+                                    "swarmraft_range_attack_bias_std"
+                                ),
+                            ),
+                            "snapshot": simulator.snapshot(),
+                        }
                     if running:
-                        next_tick_at = time.perf_counter() + simulator.config.tick_seconds
+                        next_tick_at = time.perf_counter() + _tick_interval_seconds(simulator)
                 elif name == "fail-random":
                     failed_drone_id = simulator.inject_random_failure()
                     payload = {
                         "failed_drone_id": failed_drone_id,
                         "snapshot": simulator.snapshot(),
                     }
-                elif name == "advance":
-                    step_count = max(1, int(command.get("steps", 1)))
-                    latest_snapshot = simulator.snapshot()
-                    for _ in range(step_count):
-                        latest_snapshot = simulator.step()
-                    payload = {
-                        "advanced_steps": step_count,
-                        "snapshot": latest_snapshot,
-                    }
-                    if running:
-                        next_tick_at = time.perf_counter() + simulator.config.tick_seconds
                 else:
                     payload = {"error": f"Unsupported command {name!r}"}
 
@@ -118,7 +169,7 @@ def _worker_main(
         while now >= next_tick_at and catchup_steps < max_catchup_steps:
             latest_snapshot = simulator.step()
             catchup_steps += 1
-            next_tick_at += simulator.config.tick_seconds
+            next_tick_at += _tick_interval_seconds(simulator)
             now = time.perf_counter()
 
         if latest_snapshot is not None and latest_snapshot["tick"] % simulator.config.render_stride == 0:
@@ -235,15 +286,37 @@ class SimulationRuntime:
     async def update_config(
         self,
         *,
+        drone_count: int | None = None,
+        waypoint_count: int | None = None,
         tick_seconds: float | None = None,
         render_stride: int | None = None,
+        speed_multiplier: float | None = None,
         assignment_strategy: str | None = None,
+        swarmraft_fault_budget: int | None = None,
+        swarmraft_threshold_k: float | None = None,
+        swarmraft_attacked_drones: int | None = None,
+        swarmraft_enable_gnss_attack: bool | None = None,
+        swarmraft_enable_range_attack: bool | None = None,
+        swarmraft_enable_collusion: bool | None = None,
+        swarmraft_gnss_attack_bias_std: float | None = None,
+        swarmraft_range_attack_bias_std: float | None = None,
     ) -> dict[str, Any]:
         response = await self.request(
             "configure",
+            drone_count=drone_count,
+            waypoint_count=waypoint_count,
             tick_seconds=tick_seconds,
             render_stride=render_stride,
+            speed_multiplier=speed_multiplier,
             assignment_strategy=assignment_strategy,
+            swarmraft_fault_budget=swarmraft_fault_budget,
+            swarmraft_threshold_k=swarmraft_threshold_k,
+            swarmraft_attacked_drones=swarmraft_attacked_drones,
+            swarmraft_enable_gnss_attack=swarmraft_enable_gnss_attack,
+            swarmraft_enable_range_attack=swarmraft_enable_range_attack,
+            swarmraft_enable_collusion=swarmraft_enable_collusion,
+            swarmraft_gnss_attack_bias_std=swarmraft_gnss_attack_bias_std,
+            swarmraft_range_attack_bias_std=swarmraft_range_attack_bias_std,
         )
         if isinstance(response, dict) and "config" in response and isinstance(response["config"], dict):
             self.config = SwarmConfig(**response["config"])
@@ -258,9 +331,6 @@ class SimulationRuntime:
 
     async def inject_random_failure(self) -> dict[str, Any]:
         return await self.request("fail-random")
-
-    async def advance(self, steps: int) -> dict[str, Any]:
-        return await self.request("advance", steps=max(1, int(steps)))
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()

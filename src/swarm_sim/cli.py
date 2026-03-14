@@ -99,6 +99,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the final metrics payload as JSON.",
     )
+    parser.add_argument(
+        "--swarmraft-attacked-drones",
+        type=int,
+        default=0,
+        help="Number of drones to mark as compromised in SwarmRaft mode.",
+    )
+    parser.add_argument(
+        "--swarmraft-fault-budget",
+        type=int,
+        default=1,
+        help="Maximum compromised drones SwarmRaft should tolerate before detection fails.",
+    )
+    parser.add_argument(
+        "--swarmraft-gnss-attack",
+        action="store_true",
+        help="Enable GNSS spoofing for compromised drones in SwarmRaft mode.",
+    )
+    parser.add_argument(
+        "--swarmraft-range-attack",
+        action="store_true",
+        help="Enable range tampering for compromised drones in SwarmRaft mode.",
+    )
+    parser.add_argument(
+        "--swarmraft-collusion",
+        action="store_true",
+        help="Enable colluding malicious votes in SwarmRaft mode.",
+    )
     return parser
 
 
@@ -227,10 +254,16 @@ def format_metrics_text(metrics: dict[str, Any]) -> str:
         f"raft_term: {final.get('raft_term')}",
         f"raft_quorum_available: {final.get('raft_quorum_available')}",
         f"swarmraft_enabled: {final.get('swarmraft_enabled')}",
+        f"swarmraft_attacked_agents: {final.get('swarmraft_attacked_agents')}",
         f"swarmraft_suspected_agents: {final.get('swarmraft_suspected_agents')}",
         f"swarmraft_recovered_agents: {final.get('swarmraft_recovered_agents')}",
+        f"swarmraft_true_positive_detections: {final.get('swarmraft_true_positive_detections')}",
+        f"swarmraft_false_positive_detections: {final.get('swarmraft_false_positive_detections')}",
+        f"swarmraft_false_negative_detections: {final.get('swarmraft_false_negative_detections')}",
         f"swarmraft_mean_gnss_error: {final.get('swarmraft_mean_gnss_error')}",
         f"swarmraft_mean_consensus_error: {final.get('swarmraft_mean_consensus_error')}",
+        f"swarmraft_residual_threshold: {final.get('swarmraft_residual_threshold')}",
+        f"swarmraft_vote_threshold: {final.get('swarmraft_vote_threshold')}",
         f"active_collision_pairs: {final['active_collision_pairs']}",
         f"collision_events_total: {final['collision_events_total']}",
         f"waypoint_completions: {final['waypoint_completions']}",
@@ -270,6 +303,11 @@ def main() -> None:
         assignment_strategy=args.assignment_strategy,
         physics_backend=args.backend,
         failure_tick=failure_tick,
+        swarmraft_attacked_drones=args.swarmraft_attacked_drones,
+        swarmraft_fault_budget=args.swarmraft_fault_budget,
+        swarmraft_enable_gnss_attack=args.swarmraft_gnss_attack,
+        swarmraft_enable_range_attack=args.swarmraft_range_attack,
+        swarmraft_enable_collusion=args.swarmraft_collusion,
     )
     paced_delay = frame_delay_seconds(
         tick_seconds=config.tick_seconds,

@@ -93,10 +93,6 @@ def create_app() -> FastAPI:
     async def fail_random() -> JSONResponse:
         return JSONResponse(await runtime.inject_random_failure())
 
-    @app.post("/api/advance")
-    async def advance(payload: dict[str, Any] = Body(default={})) -> JSONResponse:
-        return JSONResponse(await runtime.advance(int(payload.get("steps", 300))))
-
     @app.get("/api/config")
     async def get_config() -> JSONResponse:
         return JSONResponse(
@@ -111,9 +107,20 @@ def create_app() -> FastAPI:
     @app.post("/api/config")
     async def update_config(payload: dict[str, Any] = Body(...)) -> JSONResponse:
         config = await runtime.update_config(
+            drone_count=payload.get("drone_count"),
+            waypoint_count=payload.get("waypoint_count"),
             tick_seconds=payload.get("tick_seconds"),
             render_stride=payload.get("render_stride"),
+            speed_multiplier=payload.get("speed_multiplier"),
             assignment_strategy=payload.get("assignment_strategy"),
+            swarmraft_fault_budget=payload.get("swarmraft_fault_budget"),
+            swarmraft_threshold_k=payload.get("swarmraft_threshold_k"),
+            swarmraft_attacked_drones=payload.get("swarmraft_attacked_drones"),
+            swarmraft_enable_gnss_attack=payload.get("swarmraft_enable_gnss_attack"),
+            swarmraft_enable_range_attack=payload.get("swarmraft_enable_range_attack"),
+            swarmraft_enable_collusion=payload.get("swarmraft_enable_collusion"),
+            swarmraft_gnss_attack_bias_std=payload.get("swarmraft_gnss_attack_bias_std"),
+            swarmraft_range_attack_bias_std=payload.get("swarmraft_range_attack_bias_std"),
         )
         return JSONResponse(
             {

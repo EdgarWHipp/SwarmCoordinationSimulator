@@ -41,20 +41,28 @@ class ServerApiTest(unittest.TestCase):
             update = client.post(
                 "/api/config",
                 json={
+                    "drone_count": 8,
+                    "waypoint_count": 8,
                     "tick_seconds": 0.04,
                     "render_stride": 2,
+                    "speed_multiplier": 4.0,
                     "assignment_strategy": "swarmraft",
+                    "swarmraft_attacked_drones": 1,
+                    "swarmraft_fault_budget": 1,
+                    "swarmraft_enable_gnss_attack": True,
+                    "swarmraft_enable_range_attack": True,
                 },
             )
             self.assertEqual(update.status_code, 200)
+            self.assertEqual(update.json()["config"]["drone_count"], 8)
+            self.assertEqual(update.json()["config"]["waypoint_count"], 8)
             self.assertEqual(update.json()["config"]["tick_seconds"], 0.04)
             self.assertEqual(update.json()["config"]["render_stride"], 2)
+            self.assertEqual(update.json()["config"]["speed_multiplier"], 4.0)
             self.assertEqual(update.json()["config"]["assignment_strategy"], "swarmraft")
-
-            advance = client.post("/api/advance", json={"steps": 10})
-            self.assertEqual(advance.status_code, 200)
-            self.assertEqual(advance.json()["advanced_steps"], 10)
-            self.assertIn("snapshot", advance.json())
+            self.assertEqual(update.json()["config"]["swarmraft_attacked_drones"], 1)
+            self.assertTrue(update.json()["config"]["swarmraft_enable_gnss_attack"])
+            self.assertTrue(update.json()["config"]["swarmraft_enable_range_attack"])
 
 
 if __name__ == "__main__":

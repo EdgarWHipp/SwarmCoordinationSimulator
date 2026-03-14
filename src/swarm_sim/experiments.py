@@ -52,6 +52,31 @@ DEFAULT_SCENARIOS: tuple[ExperimentScenario, ...] = (
         },
     ),
     ExperimentScenario(
+        name="swarmraft-attack",
+        description="SwarmRaft under GNSS spoofing and range manipulation for one compromised drone.",
+        config_overrides={
+            "assignment_strategy": "swarmraft",
+            "failure_tick": None,
+            "swarmraft_attacked_drones": 1,
+            "swarmraft_fault_budget": 1,
+            "swarmraft_enable_gnss_attack": True,
+            "swarmraft_enable_range_attack": True,
+        },
+    ),
+    ExperimentScenario(
+        name="swarmraft-collusion",
+        description="SwarmRaft under colluding GNSS/range attacks across two compromised drones.",
+        config_overrides={
+            "assignment_strategy": "swarmraft",
+            "failure_tick": None,
+            "swarmraft_attacked_drones": 2,
+            "swarmraft_fault_budget": 2,
+            "swarmraft_enable_gnss_attack": True,
+            "swarmraft_enable_range_attack": True,
+            "swarmraft_enable_collusion": True,
+        },
+    ),
+    ExperimentScenario(
         name="greedy-dropout",
         description="Nearest-waypoint greedy assignment under dropout for comparison.",
         config_overrides={
@@ -135,6 +160,27 @@ def summarize_run(
         ),
         "mean_assignment_changes": round(
             fmean(item["assignment_changes"] for item in summaries), 4
+        ),
+        "final_swarmraft_attacked_agents": final_summary["swarmraft_attacked_agents"],
+        "final_swarmraft_suspected_agents": final_summary["swarmraft_suspected_agents"],
+        "final_swarmraft_recovered_agents": final_summary["swarmraft_recovered_agents"],
+        "final_swarmraft_true_positive_detections": final_summary[
+            "swarmraft_true_positive_detections"
+        ],
+        "final_swarmraft_false_positive_detections": final_summary[
+            "swarmraft_false_positive_detections"
+        ],
+        "final_swarmraft_false_negative_detections": final_summary[
+            "swarmraft_false_negative_detections"
+        ],
+        "mean_swarmraft_mean_gnss_error": round(
+            fmean(item["swarmraft_mean_gnss_error"] for item in summaries), 4
+        ),
+        "mean_swarmraft_mean_consensus_error": round(
+            fmean(item["swarmraft_mean_consensus_error"] for item in summaries), 4
+        ),
+        "mean_swarmraft_mean_residual": round(
+            fmean(item["swarmraft_mean_residual"] for item in summaries), 4
         ),
         "time_to_first_completion_seconds": (
             first_completion["elapsed_seconds"] if first_completion else None
@@ -251,6 +297,15 @@ def run_experiments(
                         "mean_cohesion_score",
                         "mean_consensus_success_ratio",
                         "mean_active_collision_pairs",
+                        "final_swarmraft_attacked_agents",
+                        "final_swarmraft_suspected_agents",
+                        "final_swarmraft_recovered_agents",
+                        "final_swarmraft_true_positive_detections",
+                        "final_swarmraft_false_positive_detections",
+                        "final_swarmraft_false_negative_detections",
+                        "mean_swarmraft_mean_gnss_error",
+                        "mean_swarmraft_mean_consensus_error",
+                        "mean_swarmraft_mean_residual",
                         "time_to_first_completion_seconds",
                         "dropout_recovery_ticks",
                     ],

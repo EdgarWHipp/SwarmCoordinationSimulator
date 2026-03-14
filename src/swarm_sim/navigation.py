@@ -8,6 +8,18 @@ from scipy.sparse.csgraph import shortest_path
 from scipy.spatial import cKDTree
 
 
+NEIGHBOR_OFFSETS: tuple[tuple[int, int], ...] = (
+    (-1, 0),
+    (1, 0),
+    (0, -1),
+    (0, 1),
+    (-1, -1),
+    (-1, 1),
+    (1, -1),
+    (1, 1),
+)
+
+
 @dataclass(slots=True)
 class NavigationGraph:
     width: int
@@ -36,8 +48,8 @@ class NavigationGraph:
         node_positions = np.stack((grid_x.ravel(), grid_y.ravel()), axis=1).astype(np.float32)
 
         node_count = node_positions.shape[0]
-        neighbor_indices = np.full((node_count, 4), -1, dtype=np.int32)
-        edge_costs = np.full((node_count, 4), np.inf, dtype=np.float32)
+        neighbor_indices = np.full((node_count, len(NEIGHBOR_OFFSETS)), -1, dtype=np.int32)
+        edge_costs = np.full((node_count, len(NEIGHBOR_OFFSETS)), np.inf, dtype=np.float32)
 
         def node_id(row: int, col: int) -> int:
             return row * cols + col
@@ -51,14 +63,14 @@ class NavigationGraph:
             for col in range(cols):
                 current = node_id(row, col)
                 slots = 0
-                for delta_row, delta_col in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                for delta_row, delta_col in NEIGHBOR_OFFSETS:
                     next_row = row + delta_row
                     next_col = col + delta_col
                     if next_row < 0 or next_row >= rows or next_col < 0 or next_col >= cols:
                         continue
                     neighbor = node_id(next_row, next_col)
                     cost = float(np.linalg.norm(node_positions[current] - node_positions[neighbor]))
-                    
+
                     neighbor_indices[current, slots] = neighbor
                     edge_costs[current, slots] = np.float32(cost)
                     slots += 1
@@ -68,13 +80,13 @@ class NavigationGraph:
                     edges_data.append(cost)
 
         graph_sparse = csr_matrix((edges_data, (edges_row, edges_col)), shape=(node_count, node_count))
-        
+
         path_costs, predecessors = shortest_path(
-            csgraph=graph_sparse, 
-            directed=False, 
+            csgraph=graph_sparse,
+            directed=False,
             return_predecessors=True
         )
-        
+
         path_costs = path_costs.astype(np.float32)
 
         next_hop = np.full((node_count, node_count), -1, dtype=np.int32)
@@ -87,15 +99,15 @@ class NavigationGraph:
                 # traceback predecessors to find the next hop from start towards goal
                 curr = goal
                 prev = predecessors[start, curr]
-                
+
                 # if unreachable (-9999 from scipy)
                 if prev < 0:
                     continue
-                    
+
                 while prev != start:
                     curr = prev
                     prev = predecessors[start, curr]
-                    
+
                 next_hop[start, goal] = curr
 
         return cls(

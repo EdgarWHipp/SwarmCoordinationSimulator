@@ -28,30 +28,42 @@ class SimulationRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_runtime_updates_tick_seconds_and_render_stride_live(self) -> None:
         updated = await self.runtime.update_config(
+            drone_count=8,
+            waypoint_count=8,
             tick_seconds=0.04,
             render_stride=2,
+            speed_multiplier=4.0,
             assignment_strategy="swarmraft",
+            swarmraft_attacked_drones=1,
+            swarmraft_fault_budget=1,
+            swarmraft_enable_gnss_attack=True,
+            swarmraft_enable_range_attack=True,
         )
 
+        self.assertEqual(updated["drone_count"], 8)
+        self.assertEqual(updated["waypoint_count"], 8)
         self.assertEqual(updated["tick_seconds"], 0.04)
         self.assertEqual(updated["render_stride"], 2)
+        self.assertEqual(updated["speed_multiplier"], 4.0)
         self.assertEqual(updated["assignment_strategy"], "swarmraft")
+        self.assertEqual(updated["swarmraft_attacked_drones"], 1)
+        self.assertEqual(updated["swarmraft_fault_budget"], 1)
+        self.assertTrue(updated["swarmraft_enable_gnss_attack"])
+        self.assertTrue(updated["swarmraft_enable_range_attack"])
         self.assertTrue(self.runtime.process.is_alive())
 
         snapshot = await self.runtime.snapshot()
+        self.assertEqual(snapshot["config"]["drone_count"], 8)
+        self.assertEqual(snapshot["config"]["waypoint_count"], 8)
         self.assertEqual(snapshot["config"]["tick_seconds"], 0.04)
         self.assertEqual(snapshot["config"]["render_stride"], 2)
+        self.assertEqual(snapshot["config"]["speed_multiplier"], 4.0)
         self.assertEqual(snapshot["config"]["assignment_strategy"], "swarmraft")
+        self.assertEqual(snapshot["config"]["swarmraft_attacked_drones"], 1)
+        self.assertEqual(snapshot["config"]["swarmraft_fault_budget"], 1)
+        self.assertEqual(len(snapshot["drones"]), 8)
+        self.assertEqual(len(snapshot["waypoints"]), 8)
         self.assertIsInstance(self.runtime.latest_snapshot_msgpack, bytes)
-
-    async def test_runtime_can_advance_multiple_ticks_immediately(self) -> None:
-        await self.runtime.pause()
-        starting_tick = (await self.runtime.snapshot())["tick"]
-
-        payload = await self.runtime.advance(12)
-
-        self.assertEqual(payload["advanced_steps"], 12)
-        self.assertGreaterEqual(payload["snapshot"]["tick"], starting_tick + 12)
 
 
 class TransportBenchmarkTest(unittest.TestCase):

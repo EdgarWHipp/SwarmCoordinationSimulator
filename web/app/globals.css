@@ -214,6 +214,87 @@ button, select, input { font: inherit; }
 .stat-value.warning  { color: var(--warning); }
 .stat-value.danger   { color: var(--danger); }
 
+.protocol-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.protocol-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.protocol-pill-complete {
+  border-color: rgba(52, 211, 153, 0.3);
+  color: var(--positive);
+}
+
+.protocol-pill-current {
+  border-color: rgba(108, 111, 255, 0.42);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(108, 111, 255, 0.08) inset;
+}
+
+.protocol-pill-muted {
+  opacity: 0.65;
+}
+
+.protocol-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: var(--subtle);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.legend-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legend-chip {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.legend-chip-true { background: #34d399; }
+.legend-chip-gnss { background: #7dd3fc; }
+.legend-chip-ins { background: #fb7185; }
+.legend-chip-local { background: #94a3b8; }
+.legend-chip-fused { background: #f8fafc; }
+.legend-chip-recovered { background: linear-gradient(90deg, #8ef0a8 0%, #ffb454 100%); }
+.legend-chip-leader { background: #d5d7ff; }
+.legend-chip-halo { background: linear-gradient(90deg, #6c6fff 0%, #ff7a59 100%); }
+
+.legend-copy {
+  color: var(--subtle);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* ---------- LOG / EVENTS ---------- */
 .event-list { display: flex; flex-direction: column; gap: 6px; }
 

@@ -10,7 +10,12 @@ from scipy.spatial import cKDTree
 
 from swarm_sim.navigation import NavigationGraph
 from swarm_sim.raft import RaftCoordinator
-from swarm_sim.swarmraft import SwarmRaftConfig, SwarmRaftLocalizer
+from swarm_sim.swarmraft import (
+    PROTOCOL_STEPS,
+    RECOVERY_MODE_NAMES,
+    SwarmRaftConfig,
+    SwarmRaftLocalizer,
+)
 
 if TYPE_CHECKING:
     from swarm_sim.taichi_backend import TaichiBoidsBackend
@@ -55,9 +60,11 @@ class SwarmConfig:
     tick_seconds: float = 0.08
     planning_interval: int = 6
     render_stride: int = 4
+    speed_multiplier: float = 1.0
     assignment_strategy: str = "raft"
     physics_backend: str = "numpy"
     max_speed: float = 85.0
+    velocity_damping: float = 1.35
     neighbor_radius: float = 150.0
     communication_radius: float = 260.0
     separation_radius: float = 68.0
@@ -68,8 +75,8 @@ class SwarmConfig:
     navigation_rows: int = 8
     cohesion_weight: float = 0.1
     alignment_weight: float = 0.12
-    separation_weight: float = 3.4
-    waypoint_weight: float = 2.6
+    separation_weight: float = 2.4
+    waypoint_weight: float = 4.0
     boundary_weight: float = 1.1
     failure_tick: int | None = 240
     failure_recovery_ticks: int = 2
@@ -79,8 +86,16 @@ class SwarmConfig:
     swarmraft_gnss_noise_std: float = 6.0
     swarmraft_ins_drift_std: float = 1.4
     swarmraft_range_noise_std: float = 4.0
-    swarmraft_residual_threshold: float = 18.0
+    swarmraft_residual_threshold: float = 0.0
     swarmraft_min_peer_votes: int = 2
+    swarmraft_fault_budget: int = 1
+    swarmraft_threshold_k: float = 2.0
+    swarmraft_attacked_drones: int = 0
+    swarmraft_enable_gnss_attack: bool = False
+    swarmraft_enable_range_attack: bool = False
+    swarmraft_enable_collusion: bool = False
+    swarmraft_gnss_attack_bias_std: float = 42.0
+    swarmraft_range_attack_bias_std: float = 18.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -91,9 +106,11 @@ class SwarmConfig:
             "tick_seconds": self.tick_seconds,
             "planning_interval": self.planning_interval,
             "render_stride": self.render_stride,
+            "speed_multiplier": self.speed_multiplier,
             "assignment_strategy": self.assignment_strategy,
             "physics_backend": self.physics_backend,
             "max_speed": self.max_speed,
+            "velocity_damping": self.velocity_damping,
             "neighbor_radius": self.neighbor_radius,
             "communication_radius": self.communication_radius,
             "separation_radius": self.separation_radius,
@@ -117,6 +134,14 @@ class SwarmConfig:
             "swarmraft_range_noise_std": self.swarmraft_range_noise_std,
             "swarmraft_residual_threshold": self.swarmraft_residual_threshold,
             "swarmraft_min_peer_votes": self.swarmraft_min_peer_votes,
+            "swarmraft_fault_budget": self.swarmraft_fault_budget,
+            "swarmraft_threshold_k": self.swarmraft_threshold_k,
+            "swarmraft_attacked_drones": self.swarmraft_attacked_drones,
+            "swarmraft_enable_gnss_attack": self.swarmraft_enable_gnss_attack,
+            "swarmraft_enable_range_attack": self.swarmraft_enable_range_attack,
+            "swarmraft_enable_collusion": self.swarmraft_enable_collusion,
+            "swarmraft_gnss_attack_bias_std": self.swarmraft_gnss_attack_bias_std,
+            "swarmraft_range_attack_bias_std": self.swarmraft_range_attack_bias_std,
         }
 
 
@@ -241,6 +266,7 @@ def _limit_and_move(
     total_force: np.ndarray,
     dt: float,
     max_speed: float,
+    velocity_damping: float,
     width: float,
     height: float,
 ) -> None:
@@ -248,11 +274,16 @@ def _limit_and_move(
     minimum_y = np.float32(20.0)
     maximum_x = np.float32(width - 20.0)
     maximum_y = np.float32(height - 20.0)
+    damping_factor = np.float32(1.0) - np.float32(velocity_damping) * np.float32(dt)
+    if damping_factor < np.float32(0.0):
+        damping_factor = np.float32(0.0)
 
     for local_index in range(active_indices.shape[0]):
         agent_index = active_indices[local_index]
         velocities[agent_index, 0] += total_force[local_index, 0] * dt
         velocities[agent_index, 1] += total_force[local_index, 1] * dt
+        velocities[agent_index, 0] *= damping_factor
+        velocities[agent_index, 1] *= damping_factor
 
         speed_sq = (
             velocities[agent_index, 0] * velocities[agent_index, 0]
@@ -480,15 +511,7 @@ class SwarmSimulator:
         self.swarmraft = SwarmRaftLocalizer(
             drone_count=self.config.drone_count,
             rng=self.rng,
-            config=SwarmRaftConfig(
-                width=float(self.config.width),
-                height=float(self.config.height),
-                gnss_noise_std=float(self.config.swarmraft_gnss_noise_std),
-                ins_drift_std=float(self.config.swarmraft_ins_drift_std),
-                range_noise_std=float(self.config.swarmraft_range_noise_std),
-                residual_threshold=float(self.config.swarmraft_residual_threshold),
-                min_peer_votes=int(self.config.swarmraft_min_peer_votes),
-            ),
+            config=self._build_swarmraft_config(),
         )
         self.taichi_backend: TaichiBoidsBackend | None = None
         if self.config.physics_backend == "taichi":
@@ -571,9 +594,33 @@ class SwarmSimulator:
         self.swarmraft.reset(self.positions)
 
         self.events.append("Simulation reset with vectorized SoA state.")
+        compromised = int(np.count_nonzero(self.swarmraft.compromised_mask))
+        if compromised > 0:
+            self.events.append(
+                f"SwarmRaft armed {compromised} compromised drone(s) for attack injection."
+            )
         snapshot = self.snapshot()
         self.metrics.observe_summary(snapshot["summary"])
         return snapshot
+
+    def _build_swarmraft_config(self) -> SwarmRaftConfig:
+        return SwarmRaftConfig(
+            width=float(self.config.width),
+            height=float(self.config.height),
+            gnss_noise_std=float(self.config.swarmraft_gnss_noise_std),
+            ins_drift_std=float(self.config.swarmraft_ins_drift_std),
+            range_noise_std=float(self.config.swarmraft_range_noise_std),
+            residual_threshold=float(self.config.swarmraft_residual_threshold),
+            min_peer_votes=int(self.config.swarmraft_min_peer_votes),
+            fault_budget=int(self.config.swarmraft_fault_budget),
+            threshold_k=float(self.config.swarmraft_threshold_k),
+            attacked_drones=int(self.config.swarmraft_attacked_drones),
+            enable_gnss_attack=bool(self.config.swarmraft_enable_gnss_attack),
+            enable_range_attack=bool(self.config.swarmraft_enable_range_attack),
+            enable_collusion=bool(self.config.swarmraft_enable_collusion),
+            gnss_attack_bias_std=float(self.config.swarmraft_gnss_attack_bias_std),
+            range_attack_bias_std=float(self.config.swarmraft_range_attack_bias_std),
+        )
 
     def _effective_reset_seed(self) -> int:
         if self.reset_index <= 0:
@@ -610,6 +657,9 @@ class SwarmSimulator:
             for event in self.raft.tick(current_tick=self.tick, failed=self.failed):
                 self.events.append(event.replace("node ", "drone-"))
 
+        if self.config.assignment_strategy == "swarmraft":
+            self._update_swarmraft_state()
+
         planning_due = self.tick == 1 or self.tick % self.config.planning_interval == 0
         recovery_due = self._failure_recovery_due()
         if recovery_due:
@@ -620,8 +670,6 @@ class SwarmSimulator:
         self._refresh_routes()
         new_collisions = self._update_motion()
         completions = self._complete_waypoints()
-        if self.config.assignment_strategy == "swarmraft":
-            self._update_swarmraft_state()
 
         snapshot = self.snapshot()
         self.metrics.record_collisions(new_collisions)
@@ -665,9 +713,19 @@ class SwarmSimulator:
         *,
         tick_seconds: float | None = None,
         render_stride: int | None = None,
+        speed_multiplier: float | None = None,
         assignment_strategy: str | None = None,
+        swarmraft_fault_budget: int | None = None,
+        swarmraft_threshold_k: float | None = None,
+        swarmraft_attacked_drones: int | None = None,
+        swarmraft_enable_gnss_attack: bool | None = None,
+        swarmraft_enable_range_attack: bool | None = None,
+        swarmraft_enable_collusion: bool | None = None,
+        swarmraft_gnss_attack_bias_std: float | None = None,
+        swarmraft_range_attack_bias_std: float | None = None,
     ) -> dict[str, Any]:
         changed: list[str] = []
+        swarmraft_config_changed = False
         if tick_seconds is not None:
             if tick_seconds <= 0:
                 raise ValueError("tick_seconds must be greater than 0.")
@@ -678,6 +736,11 @@ class SwarmSimulator:
                 raise ValueError("render_stride must be at least 1.")
             self.config.render_stride = int(render_stride)
             changed.append(f"render_stride={self.config.render_stride}")
+        if speed_multiplier is not None:
+            if speed_multiplier <= 0:
+                raise ValueError("speed_multiplier must be greater than 0.")
+            self.config.speed_multiplier = float(speed_multiplier)
+            changed.append(f"speed_multiplier={self.config.speed_multiplier:.2f}")
         if assignment_strategy is not None:
             if assignment_strategy not in SUPPORTED_ASSIGNMENT_STRATEGIES:
                 raise ValueError(
@@ -685,8 +748,62 @@ class SwarmSimulator:
                 )
             self.config.assignment_strategy = assignment_strategy
             changed.append(f"assignment_strategy={self.config.assignment_strategy}")
-            if assignment_strategy == "swarmraft":
-                self.swarmraft.reset(self.positions)
+        if swarmraft_fault_budget is not None:
+            if swarmraft_fault_budget < 0:
+                raise ValueError("swarmraft_fault_budget must be non-negative.")
+            self.config.swarmraft_fault_budget = int(swarmraft_fault_budget)
+            changed.append(f"swarmraft_fault_budget={self.config.swarmraft_fault_budget}")
+            swarmraft_config_changed = True
+        if swarmraft_threshold_k is not None:
+            if swarmraft_threshold_k < 0:
+                raise ValueError("swarmraft_threshold_k must be non-negative.")
+            self.config.swarmraft_threshold_k = float(swarmraft_threshold_k)
+            changed.append(f"swarmraft_threshold_k={self.config.swarmraft_threshold_k:.2f}")
+            swarmraft_config_changed = True
+        if swarmraft_attacked_drones is not None:
+            if swarmraft_attacked_drones < 0:
+                raise ValueError("swarmraft_attacked_drones must be non-negative.")
+            self.config.swarmraft_attacked_drones = int(swarmraft_attacked_drones)
+            changed.append(f"swarmraft_attacked_drones={self.config.swarmraft_attacked_drones}")
+            swarmraft_config_changed = True
+        if swarmraft_enable_gnss_attack is not None:
+            self.config.swarmraft_enable_gnss_attack = bool(swarmraft_enable_gnss_attack)
+            changed.append(
+                f"swarmraft_enable_gnss_attack={self.config.swarmraft_enable_gnss_attack}"
+            )
+            swarmraft_config_changed = True
+        if swarmraft_enable_range_attack is not None:
+            self.config.swarmraft_enable_range_attack = bool(swarmraft_enable_range_attack)
+            changed.append(
+                f"swarmraft_enable_range_attack={self.config.swarmraft_enable_range_attack}"
+            )
+            swarmraft_config_changed = True
+        if swarmraft_enable_collusion is not None:
+            self.config.swarmraft_enable_collusion = bool(swarmraft_enable_collusion)
+            changed.append(f"swarmraft_enable_collusion={self.config.swarmraft_enable_collusion}")
+            swarmraft_config_changed = True
+        if swarmraft_gnss_attack_bias_std is not None:
+            if swarmraft_gnss_attack_bias_std < 0:
+                raise ValueError("swarmraft_gnss_attack_bias_std must be non-negative.")
+            self.config.swarmraft_gnss_attack_bias_std = float(swarmraft_gnss_attack_bias_std)
+            changed.append(
+                "swarmraft_gnss_attack_bias_std="
+                f"{self.config.swarmraft_gnss_attack_bias_std:.2f}"
+            )
+            swarmraft_config_changed = True
+        if swarmraft_range_attack_bias_std is not None:
+            if swarmraft_range_attack_bias_std < 0:
+                raise ValueError("swarmraft_range_attack_bias_std must be non-negative.")
+            self.config.swarmraft_range_attack_bias_std = float(swarmraft_range_attack_bias_std)
+            changed.append(
+                "swarmraft_range_attack_bias_std="
+                f"{self.config.swarmraft_range_attack_bias_std:.2f}"
+            )
+            swarmraft_config_changed = True
+
+        if assignment_strategy == "swarmraft" or swarmraft_config_changed:
+            self.swarmraft.config = self._build_swarmraft_config()
+            self.swarmraft.reset(self.positions)
         if changed:
             self.events.append(f"Runtime config updated: {', '.join(changed)}.")
         return self.config.as_dict()
@@ -1120,12 +1237,17 @@ class SwarmSimulator:
                 )
 
             boundary_force = self._boundary_force(active_positions)
+            assigned_bias = (
+                (self.target_waypoints[active_indices] >= 0).astype(np.float32)[:, None]
+            )
+            pursuit_multiplier = np.float32(1.0) + (assigned_bias * np.float32(0.35))
+            separation_multiplier = np.float32(1.0) - (assigned_bias * np.float32(0.25))
 
             total_force = (
-                separation * np.float32(self.config.separation_weight)
+                separation * np.float32(self.config.separation_weight) * separation_multiplier
                 + alignment * np.float32(self.config.alignment_weight)
                 + cohesion * np.float32(self.config.cohesion_weight)
-                + target_force * np.float32(self.config.waypoint_weight)
+                + target_force * np.float32(self.config.waypoint_weight) * pursuit_multiplier
                 + boundary_force * np.float32(self.config.boundary_weight)
             ).astype(np.float32)
 
@@ -1136,6 +1258,7 @@ class SwarmSimulator:
                 total_force,
                 float(self.config.tick_seconds),
                 float(self.config.max_speed),
+                float(self.config.velocity_damping),
                 float(self.config.width),
                 float(self.config.height),
             )
@@ -1256,11 +1379,21 @@ class SwarmSimulator:
             if self.config.assignment_strategy == "swarmraft"
             else {
                 "enabled": False,
+                "attacked_agents": 0,
                 "suspected_agents": 0,
                 "recovered_agents": 0,
+                "true_positive_detections": 0,
+                "false_positive_detections": 0,
+                "false_negative_detections": 0,
                 "mean_gnss_error": 0.0,
+                "median_gnss_error": 0.0,
                 "mean_consensus_error": 0.0,
+                "median_consensus_error": 0.0,
                 "mean_residual": 0.0,
+                "residual_threshold": 0.0,
+                "vote_threshold": 0,
+                "leader_round_applied": False,
+                "protocol_phase": "Idle",
             }
         )
         return {
@@ -1283,11 +1416,21 @@ class SwarmSimulator:
             "raft_leader_id": raft_status["leader_id"],
             "raft_quorum_available": raft_status["quorum_available"],
             "swarmraft_enabled": swarmraft_status["enabled"],
+            "swarmraft_attacked_agents": swarmraft_status["attacked_agents"],
             "swarmraft_suspected_agents": swarmraft_status["suspected_agents"],
             "swarmraft_recovered_agents": swarmraft_status["recovered_agents"],
+            "swarmraft_true_positive_detections": swarmraft_status["true_positive_detections"],
+            "swarmraft_false_positive_detections": swarmraft_status["false_positive_detections"],
+            "swarmraft_false_negative_detections": swarmraft_status["false_negative_detections"],
             "swarmraft_mean_gnss_error": swarmraft_status["mean_gnss_error"],
+            "swarmraft_median_gnss_error": swarmraft_status["median_gnss_error"],
             "swarmraft_mean_consensus_error": swarmraft_status["mean_consensus_error"],
+            "swarmraft_median_consensus_error": swarmraft_status["median_consensus_error"],
             "swarmraft_mean_residual": swarmraft_status["mean_residual"],
+            "swarmraft_residual_threshold": swarmraft_status["residual_threshold"],
+            "swarmraft_vote_threshold": swarmraft_status["vote_threshold"],
+            "swarmraft_leader_round_applied": swarmraft_status["leader_round_applied"],
+            "swarmraft_protocol_phase": swarmraft_status["protocol_phase"],
             "waypoint_completions": self.waypoint_completions,
             "waypoint_completion_rate_per_min": round(completion_rate, 2),
         }
@@ -1337,10 +1480,16 @@ class SwarmSimulator:
     def _serialize_swarmraft(self) -> dict[str, Any]:
         if self.config.assignment_strategy != "swarmraft":
             return {"enabled": False}
+        summary = self.swarmraft.summary(true_positions=self.positions, failed=self.failed)
         return {
             "enabled": True,
             "leader_id": self.raft.status(self.failed, self.agent_ids)["leader_id"],
-            "residual_threshold": round(float(self.config.swarmraft_residual_threshold), 2),
+            "protocol_phase": summary["protocol_phase"],
+            "protocol_steps": list(PROTOCOL_STEPS),
+            "residual_threshold": summary["residual_threshold"],
+            "vote_threshold": summary["vote_threshold"],
+            "attacked_agents": summary["attacked_agents"],
+            "leader_round_applied": summary["leader_round_applied"],
             "suspected_agents": [
                 self.agent_ids[index]
                 for index in np.flatnonzero(self.swarmraft.suspected_faulty & (~self.failed))
@@ -1359,6 +1508,10 @@ class SwarmSimulator:
                 "x": round(float(self.swarmraft.ins_positions[index, 0]), 2),
                 "y": round(float(self.swarmraft.ins_positions[index, 1]), 2),
             },
+            "local_report_position": {
+                "x": round(float(self.swarmraft.local_report_positions[index, 0]), 2),
+                "y": round(float(self.swarmraft.local_report_positions[index, 1]), 2),
+            },
             "fused_position": {
                 "x": round(float(self.swarmraft.fused_positions[index, 0]), 2),
                 "y": round(float(self.swarmraft.fused_positions[index, 1]), 2),
@@ -1371,15 +1524,20 @@ class SwarmSimulator:
             "negative_votes": int(self.swarmraft.negative_votes[index]),
             "positive_votes": int(self.swarmraft.positive_votes[index]),
             "peer_count": int(self.swarmraft.peer_counts[index]),
+            "compromised": bool(self.swarmraft.compromised_mask[index]),
             "suspected_faulty": bool(self.swarmraft.suspected_faulty[index]),
             "recovered": bool(self.swarmraft.recovered_mask[index]),
+            "recovery_mode": RECOVERY_MODE_NAMES[int(self.swarmraft.recovery_modes[index])],
         }
 
     def _update_swarmraft_state(self) -> None:
+        leader_index = self.raft.leader_id(self.failed)
         self.swarmraft.update(
             true_positions=self.positions,
             velocities=self.velocities,
             failed=self.failed,
             communication_radius=float(self.config.communication_radius),
             tick_seconds=float(self.config.tick_seconds),
+            leader_index=(None if leader_index < 0 else int(leader_index)),
+            quorum_available=bool(self.raft.quorum_available(self.failed)),
         )
